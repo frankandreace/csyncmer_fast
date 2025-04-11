@@ -21,7 +21,7 @@ If want to pass a fasta file (data/chr19_bit.fa), k=31 and s=11, please use:
 
 ### Basic information
 This library aims at providing a header only library, in C, to compute closed syncmers in a given sequence.
-On my machine, with 2.6 GH and hyperthreading disabled I get:
+On my machine, with CPU set to 2.6 GHz and hyperthreading disabled I get:
 
 - 460 MB/S for HASHING
 - 42 MB/S for NAIVE

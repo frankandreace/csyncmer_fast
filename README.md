@@ -23,17 +23,16 @@ If want to pass a fasta file (data/chr19_bit.fa), k=31 and s=11, please use:
 This library aims at providing a header only library, in C, to compute closed syncmers in a given sequence.
 On my machine, with 2.6 GH and hyperthreading disabled I get:
 
-460 MB/S for HASHING
-
-42 MB/S for NAIVE
-
-82 MB/S for RE-SCAN WITH CIRCULAR ARRAY STRUCT
-
-85 MB/S for RE-SCAN WITHOUT STRUCT AND WITH LARGE ARRAY
+- 460 MB/S for HASHING
+- 42 MB/S for NAIVE
+- 82 MB/S for RE-SCAN WITH CIRCULAR ARRAY STRUCT
+- 85 MB/S for RE-SCAN WITHOUT STRUCT AND WITH LARGE ARRAY
 
 No significative change by using an array of length "window_size" and using a 256 MB array for the rescan computation.
 
 #### Input
+At the moment I am converting ASCII of the Fasta char into the binary encoding.
+
 The library has a main interface that is composed of a function that accepts a binary sequence (A is 00, C is 01, G is 10 and T is 11) , a k-mer lenght value K and a s-mer length value S.
 
 #### Output

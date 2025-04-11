@@ -1,6 +1,12 @@
 # csyncmer_fast
 Header only library for fast syncmer extraction from a binary sequence
 
+### How to compile
+Please do: 
+```
+gcc -march=native -O3 -o test test.c
+```
+
 ### Basic information
 This library aims at providing a header only library, in C, to compute closed syncmers in a given sequence.
 
@@ -18,10 +24,14 @@ A k-mer is a closed filter iff the minimal LEFTMOST canonical s-mer (s < k) that
 
 ### TO DO LIST:
 
-- [ ] Rescan function implementation
+- [x] Rescan function implementation
+- [x] Unit test it
+- [x] Wrap it for time and throughput estimation
+- [x] Test on file for speed
+- [ ] Add Makefile
 - [ ] Rescan iterator implementation
-- [ ] Unit test it
-- [ ] Wrap it for time and throughput estimation
-- [ ] Test on file for speed
+- [ ] Integrate Prof Sadakane AVX hashing
+- [ ] Integrate Prof Sadakane AVX syncmer computation
+- [ ] Run speed test on them
 - [ ] Python script to plot
 - [ ] Updarte readme

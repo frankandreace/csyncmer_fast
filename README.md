@@ -24,8 +24,11 @@ This library aims at providing a header only library, in C, to compute closed sy
 On my machine, with 2.6 GH and hyperthreading disabled I get:
 
 460 MB/S for HASHING
-42 MB/S for NAIVE  
+
+42 MB/S for NAIVE
+
 82 MB/S for RE-SCAN WITH CIRCULAR ARRAY STRUCT
+
 85 MB/S for RE-SCAN WITHOUT STRUCT AND WITH LARGE ARRAY
 
 No significative change by using an array of length "window_size" and using a 256 MB array for the rescan computation.

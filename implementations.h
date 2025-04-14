@@ -1,6 +1,6 @@
-#include "circular_array.h"
-#include "circular_array1.h"
-#include "hashing.h"
+// #include "circular_array.h"
+// #include "hashing.h"
+#include "csyncmer_fast_iterator.h"
 
 typedef struct
 {
@@ -9,6 +9,32 @@ typedef struct
     size_t absolute_kmer_position ; 
 } Syncmer;
 
+
+void compute_closed_syncmers_rescan_iterator(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
+    if(length < K) {
+        fprintf(stderr, "Sequence length is less than K\n");
+        return;
+    }
+
+    U64 smer_value ;
+    size_t kmer_position ;
+    size_t smer_position ;
+
+    U64 computed_syncmer = 0;
+
+    syncmerIterator *syncmer_iterator = syncmerIteratorInitialization(K, S, sequence_input, length) ;
+
+    if (!syncmer_iterator->isDone){
+        while(get_next_syncmer(syncmer_iterator, &kmer_position, &smer_position, &smer_value)){
+            computed_syncmer++ ;
+        }
+    } 
+    *num_syncmer = computed_syncmer ;
+    syncmerIteratorDestroy(syncmer_iterator);
+
+    printf("[RESCAN_ITERATOR]:: COMPUTED %llu CLOSED SYNCMERS\n", computed_syncmer) ; 
+
+}
 
 void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
     // if len < K, return
@@ -29,11 +55,11 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
 
     Seqhash *sh = seqhashCreate(S, window_size, seed) ;
     SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
-    Syncmer *sync = (Syncmer *)malloc(sizeof(Syncmer)) ;
-    if (sync == NULL){
-        printf("sync is null.\n") ;
-        exit (-1) ;
-    }
+    // Syncmer *sync = (Syncmer *)malloc(sizeof(Syncmer)) ;
+    // if (sync == NULL){
+    //     printf("sync is null.\n") ;
+    //     exit (-1) ;
+    // }
     if (ca == NULL){
         printf("ca is null.\n") ;
         exit (-1) ;
@@ -79,9 +105,9 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
     }
     free(ca) ;
     free(si) ;
-    free(sync) ;
-    printf("COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
-    printf("HASHED %lu S-MERS\n", computed_smers) ;
+    // qfree(sync) ;
+    // printf("[RESCAN_CIRCULAR_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    // printf("[RESCAN_CIRCULAR_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 }
 
@@ -154,8 +180,8 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
     // releasing memory
     free(s_mer_hashes) ;
     *num_syncmer = computed_syncmers;
-    printf("COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
-    printf("HASHED %lu S-MERS\n", computed_smers) ; 
+    // printf("[NAIVE]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    // printf("[NAIVE]:: HASHED %lu S-MERS\n", computed_smers) ; 
 }
 
 void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size_t S){
@@ -181,7 +207,7 @@ void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size
         computed_smers++;
         current_position++;
     }
-    printf("HASHED %lu S-MERS\n", computed_smers) ; 
+    // printf("[HASHING_BENCHMARK]:: HASHED %lu S-MERS\n", computed_smers) ; 
 
 }
 
@@ -197,26 +223,20 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t length, size_t 
     U64 seed  = 7 ;
     size_t num_s_mers = length - S + 1 ;
     size_t num_k_mers = length - K + 1 ;
-    size_t window_size = (size_t)K - (size_t)S + 1 ;
+    size_t window_size = K - S + 1 ;
     size_t circular_array_size = (1 << CIRCULARARRAYSIZE);
     size_t computed_syncmers = 0 ;
     size_t computed_smers = 0 ;
 
     // initialize 
 
-    // CircularArray1 *ca = circularArrayCreate1(circular_array_size, window_size) ;
-
     Seqhash *sh = seqhashCreate(S, window_size, seed) ;
     SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
 
-    printf("CIRCULAR ARRAY SIZE IS %lu \n", circular_array_size) ;
+
 
     U64 *hashvector = (U64 *)malloc(sizeof(U64) * circular_array_size) ;
 
-    // if (ca == NULL){
-    //     printf("ca is null.\n") ;
-    //     exit (-1) ;
-    // }
     if (sh == NULL){
         printf("sh is null.\n") ;
         exit (-1) ;
@@ -292,7 +312,67 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t length, size_t 
     // free(ca) ;
     free(si) ;
     // free(sync) ;
-    printf("COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
-    printf("HASHED %lu S-MERS\n", computed_smers) ;
+    // printf("[RESCAN_LARGE_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    // printf("[RESCAN_LARGE_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 }
+
+
+void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
+    if(length < K) {
+        fprintf(stderr, "Sequence length is less than K\n");
+        return;
+    }
+
+    U64 seed  = 7 ;
+    size_t num_s_mers = length - S + 1 ;
+    size_t num_k_mers = length - K + 1 ;
+    size_t window_size = K - S + 1 ;
+
+    U64 current_smer = 0 ;
+    size_t computed_syncmers = 0 ;
+    size_t computed_smers = 0 ;
+
+    // Precompute all s-mer hashes
+    Seqhash *sh = seqhashCreate(S, window_size, seed) ;
+    SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
+    U64 *s_mer_hashes = (U64 *)malloc(sizeof(U64) * num_s_mers) ;
+
+    for(size_t s_mer_pos = 0; s_mer_pos < num_s_mers; s_mer_pos++) {
+        seqhashNext(si, &current_smer);
+        s_mer_hashes[s_mer_pos] = current_smer;
+        computed_smers++;
+    }
+
+    // Initialize deque
+    size_t *deque = (size_t *)malloc(num_s_mers * sizeof(size_t));
+    size_t front = 0, back = 0;
+
+    // Use deque to find minimal s-mers in O(N)
+    for(size_t i = 0; i < num_s_mers; i++) {
+        while(back > front  && s_mer_hashes[deque[back-1]] > s_mer_hashes[i]) {
+            back--;
+        }
+        deque[back++] = i;
+        if(i >= window_size && deque[front] <= i - window_size) {
+                front++;
+        }
+        // Check for closed syncmer condition
+        if(i >= window_size - 1) {
+            size_t min_pos = deque[front];
+            size_t kmer_pos = i - window_size + 1;
+            if(min_pos == kmer_pos || min_pos == kmer_pos + K - S) {
+                computed_syncmers++;
+            }
+        }
+    }
+
+    // printf("[DEQUE]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    // printf("[DEQUE]:: HASHED %lu S-MERS\n", computed_smers) ;
+    *num_syncmer = computed_syncmers;
+
+    free(s_mer_hashes);
+    free(deque);
+}
+
+

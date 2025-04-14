@@ -1,7 +1,9 @@
 #include <string.h>
 #include <time.h>
+#include <stdio.h>
+#include <unistd.h>
 
-#include "rescan.h"
+#include "implementations.h"
 #include "benchmarking.h"
 #include "fasta_reader.h"
 
@@ -26,7 +28,7 @@ static inline uint8_t base_to_bits(char base) {
     char *sequence_input = read_sequence(seqStream) ;
     int sequence_input_length = strlen(sequence_input) ;
 
-    printf("SEQ SIZE IS %lu\n", sequence_input_length) ;
+    printf("SEQ SIZE IS %d\n", sequence_input_length) ;
 
     // ENCODING ASCII INTO 2-BIT AGCT ENCODING
     uint8_t *encoded_seq = malloc(sequence_input_length * sizeof(uint8_t));
@@ -72,36 +74,78 @@ static inline uint8_t base_to_bits(char base) {
     char * rescan_name2 = "RESCAN ARRAY" ;
     char * naive_name = "NAIVE" ;
     char * hashing_name = "HASHING" ;
+    char * deque_name = "DEQUE" ;
 
     size_t num_syncmer_rescan;
     size_t num_syncmer_naive;
+    size_t num_syncmer_deque;
+    size_t num_syncmer_rescan_iterator;
 
     clock_t start_time;
     clock_t end_time;
+
+    //BENCHMARK FILE
+    FILE *filePtr;
+    char* filename = "benchmark.tsv" ;
+
+    bool first_writing = false;
+    if (access(filename, F_OK) != 0) {
+        first_writing = true;
+    }
+
+    filePtr = fopen(filename, "a");
+
+    if (filePtr == NULL) {
+        // If the file could not be opened, print an error message and exit
+        perror("Error opening file");
+        return 1;
+    }
+
+    if (filePtr != NULL && first_writing) { 
+        fprintf(filePtr, "HASHING\tNAIVE\tRESCAN_CIRCULAR_ARRAY\tRESCAN_CA_ITERATOR\tRESCAN\tDEQUE\n") ; 
+    }
 
     //benchmark speed for just hashing
     start_time = clock();
     hahsing_speed_benchmark(encoded_seq2, sequence_input_length, K, S) ;
     end_time = clock();
-    print_benchmark(hashing_name, start_time, end_time, fasta_filename) ;
+    print_benchmark(hashing_name, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for naive
     start_time = clock();
     compute_closed_syncmers_naive(encoded_seq1, sequence_input_length, K, S, &num_syncmer_naive) ;
     end_time = clock();
-    print_benchmark(naive_name, start_time, end_time, fasta_filename) ;
+    print_benchmark(naive_name, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
-    //benchmark speed for naive
+    //benchmark speed for syncmer with rescan and ciruclar array
     start_time = clock();
     compute_closed_syncmers(encoded_seq, sequence_input_length, K, S, &num_syncmer_rescan) ;
     end_time = clock();
-    print_benchmark(rescan_name, start_time, end_time, fasta_filename) ;
+    print_benchmark(rescan_name, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+
+    //benchmark speed for rescan with circular array and iterator
+    start_time = clock();
+    compute_closed_syncmers_rescan_iterator(encoded_seq, sequence_input_length, K, S, &num_syncmer_rescan_iterator) ;
+    end_time = clock();
+    print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
     
-    //benchmark speed for naive
+    //benchmark speed for rescan without circular array
     start_time = clock();
     compute_closed_syncmers_rescan(encoded_seq, sequence_input_length, K, S, &num_syncmer_rescan) ;
     end_time = clock();
-    print_benchmark(rescan_name2, start_time, end_time, fasta_filename) ;
+    print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+
+    //benchmark speed for deque
+    start_time = clock();
+    compute_closed_syncmers_deque_rayan(encoded_seq, sequence_input_length, K, S, &num_syncmer_deque);
+    end_time = clock();
+    print_benchmark(deque_name, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\n") ; }
 
     fclose(seqFile) ;
 
@@ -130,21 +174,39 @@ int compute_from_sequence(char *sequence_input, int K, int S){
 
     size_t num_syncmer_rescan;
     size_t num_syncmer_naive;
-    size_t num_syncmer_rescan2;
+    size_t num_syncmer_rescan_long_array;
+    size_t num_syncmer_rescan_deque;
+    size_t num_syncmer_rescan_iterator;
 
     // CHECK CORRECTNESS
-    compute_closed_syncmers(encoded_seq, len, K, S, &num_syncmer_rescan) ;
-
     compute_closed_syncmers_naive(encoded_seq, len, K, S, &num_syncmer_naive) ;
 
-    compute_closed_syncmers_rescan(encoded_seq, len, K, S, &num_syncmer_rescan2) ;
+    compute_closed_syncmers(encoded_seq, len, K, S, &num_syncmer_rescan) ;
 
-    if (num_syncmer_naive != num_syncmer_rescan || num_syncmer_naive != num_syncmer_rescan2){
-        printf("RESCAN IS %lu ; NAIVE IS: %lu ; RESCAN2 IS: %lu\n", num_syncmer_rescan, num_syncmer_naive, num_syncmer_rescan2) ;
+    compute_closed_syncmers_rescan(encoded_seq, len, K, S, &num_syncmer_rescan_long_array) ;
+
+    compute_closed_syncmers_deque_rayan(encoded_seq, len, K, S, &num_syncmer_rescan_deque) ;
+
+    compute_closed_syncmers_rescan_iterator(encoded_seq, len, K, S, &num_syncmer_rescan_iterator) ;
+
+
+    if (num_syncmer_naive != num_syncmer_rescan){
+        printf("NAIVE IS: %lu ; RESCAN IS: %lu\n", num_syncmer_naive, num_syncmer_rescan) ;
         exit(-1) ;
     }
-
-    return 0;
+    else if (num_syncmer_naive != num_syncmer_rescan_long_array){
+        printf("NAIVE IS: %lu ; RESCAN LONG ARRAY IS: %lu\n", num_syncmer_naive, num_syncmer_rescan_long_array) ;
+        exit(-1) ;
+    }
+    else if (num_syncmer_naive != num_syncmer_rescan_deque){
+        printf("NAIVE IS: %lu ; DEQUE IS: %lu\n", num_syncmer_naive, num_syncmer_rescan_deque) ;
+        exit(-1) ;
+    }
+    else if (num_syncmer_naive != num_syncmer_rescan_iterator){
+        printf("NAIVE IS: %lu ; RESCAN ITERATOR IS: %lu\n", num_syncmer_naive, num_syncmer_rescan_iterator) ;
+        exit(-1) ;
+    }
+    else{ return 0 ; }
 }
 
 /*--------------*/
@@ -161,9 +223,9 @@ int main(int argc, char *argv[]) {
     int K = atoi(argv[2]);
     int S = atoi(argv[3]);
     int F = atoi(argv[4]);
-
+    printf("FILE: %s, K: %d, S: %d, F: %d", sequence_input, K, S, F) ;
     if(S >= K) {
-        fprintf(stderr, "Error: S must be less than K\n");
+        fprintf(stderr, "Error: S (%d) must be less than K (%d)\n", S, K);
         return 1;
     }
 

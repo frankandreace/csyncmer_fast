@@ -21,12 +21,14 @@ If want to pass a fasta file (data/chr19_bit.fa), k=31 and s=11, please use:
 
 ### Basic information
 This library aims at providing a header only library, in C, to compute closed syncmers in a given sequence.
-On my machine, with CPU set to 2.6 GHz and hyperthreading disabled I get:
+On my machine, using an intel i9 CPU set to 2.6 GHz and hyperthreading disabled, on one core, I get:
 
-- 460 MB/S for HASHING
-- 42 MB/S for NAIVE
-- 82 MB/S for RE-SCAN WITH CIRCULAR ARRAY STRUCT
-- 85 MB/S for RE-SCAN WITHOUT STRUCT AND WITH LARGE ARRAY
+- ~460 MB/S for HASHING
+- ~90 MB/S for RE-SCAN USING A LARGE ARRAY WHERE TO STORE HASHES
+- ~85 MB/S for RE-SCAN WITH A CIRCULAR ARRAY STRUCTURE
+- ~80 MB/S for RE-SCAN ITERATOR WITH CIRCULAR ARRAY STRUCT
+- ~47 MB/S for DEQUE IMPLEMENTATION
+- ~42 MB/S for NAIVE IMPLEMENTATION
 
 No significative change by using an array of length "window_size" and using a 256 MB array for the rescan computation.
 

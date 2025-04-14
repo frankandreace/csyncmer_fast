@@ -22,7 +22,7 @@ void print_troughput(double file_size_mb, double processing_speed){
       printf("Processing speed: %.4f MB/sec\n", processing_speed);
 }
 
-void print_benchmark(char* name, double start_time, double end_time, char* filename){
+void print_benchmark(char* name, double start_time, double end_time, char* filename, FILE *filePtr){
     
     // precomputing useful variables
     double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
@@ -30,6 +30,8 @@ void print_benchmark(char* name, double start_time, double end_time, char* filen
     off_t file_size = get_file_size(filename);
     double file_size_mb = file_size / (1024.0 * 1024.0);
     double processing_speed = file_size_mb / elapsed_time;
+
+    if (filePtr != NULL) { fprintf(filePtr, "%lf", processing_speed) ; }
 
     printf("%s Performance metrics.\n", name);
 

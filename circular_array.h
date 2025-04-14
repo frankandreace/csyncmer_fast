@@ -88,3 +88,7 @@ bool is_syncmer(CircularArray *ca, size_t *position){
     }
     return false;
 }
+
+U64 get_smer(CircularArray *ca){
+    return ca->hashVector[ca->minimum_position];
+}

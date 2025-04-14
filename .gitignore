@@ -3,3 +3,5 @@ test
 benchmark_plot.png
 benchmark.tsv
 benchmark_plot*
+benchmark/
+*.o

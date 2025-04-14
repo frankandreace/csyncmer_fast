@@ -374,5 +374,3 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
     free(s_mer_hashes);
     free(deque);
 }
-
-

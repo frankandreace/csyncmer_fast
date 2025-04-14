@@ -7,10 +7,11 @@ set -e
 
 
 # TESTING COMPUTATION SPEED
+rm -rf benchmark/benchmark.tsv benchmark/benchmark_plot*
 
 for i in {1..20} 
 do
-    ./test_speed.sh
+    ./scripts/test_speed.sh
 done
 
-./plot_result.py benchmark.tsv benchmark_plot
+./scripts/plot_result.py benchmark/benchmark.tsv benchmark/benchmark_plot

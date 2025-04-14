@@ -47,8 +47,8 @@ echo "[Executing] sudo sh -c 'echo off > /sys/devices/system/cpu/smt/control'"
 sudo sh -c 'echo off > /sys/devices/system/cpu/smt/control'
 
 echo "RUNNING SPEED TEST"
-echo "[Executing] $FILE $KMER_SIZE $SMER_SIZE $MODE"
-./test $FILE $KMER_SIZE $SMER_SIZE $MODE
+echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
+./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE
 
 echo "Re-enabling HYPERTREADING."
 echo "[Executing] sudo sh -c 'echo on > /sys/devices/system/cpu/smt/control'"

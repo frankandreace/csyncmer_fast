@@ -36,8 +36,8 @@ do
     fi
     sequence=$(generate_sequence 10000)
     # Execute the test command with the generated parameters
-    echo "./test \"$sequence\" $a $b 0"
-    ./test "$sequence" $a $b 0
+    echo "./bin/test \"$sequence\" $a $b 0"
+    ./bin/test "$sequence" $a $b 0
     # ./bin/syncmer_tree ./bin/csyncmer "$seqfile" $a $b
 done
 

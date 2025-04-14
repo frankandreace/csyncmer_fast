@@ -106,8 +106,8 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
     free(ca) ;
     free(si) ;
     // qfree(sync) ;
-    // printf("[RESCAN_CIRCULAR_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
-    // printf("[RESCAN_CIRCULAR_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
+    printf("[RESCAN_CIRCULAR_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    printf("[RESCAN_CIRCULAR_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 }
 
@@ -180,8 +180,8 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
     // releasing memory
     free(s_mer_hashes) ;
     *num_syncmer = computed_syncmers;
-    // printf("[NAIVE]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
-    // printf("[NAIVE]:: HASHED %lu S-MERS\n", computed_smers) ; 
+    printf("[NAIVE]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    printf("[NAIVE]:: HASHED %lu S-MERS\n", computed_smers) ; 
 }
 
 void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size_t S){
@@ -207,7 +207,7 @@ void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size
         computed_smers++;
         current_position++;
     }
-    // printf("[HASHING_BENCHMARK]:: HASHED %lu S-MERS\n", computed_smers) ; 
+    printf("[HASHING_BENCHMARK]:: HASHED %lu S-MERS\n", computed_smers) ; 
 
 }
 
@@ -312,8 +312,8 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t length, size_t 
     // free(ca) ;
     free(si) ;
     // free(sync) ;
-    // printf("[RESCAN_LARGE_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
-    // printf("[RESCAN_LARGE_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
+    printf("[RESCAN_LARGE_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    printf("[RESCAN_LARGE_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 }
 
@@ -367,10 +367,110 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
         }
     }
 
-    // printf("[DEQUE]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
-    // printf("[DEQUE]:: HASHED %lu S-MERS\n", computed_smers) ;
+    printf("[DEQUE]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    printf("[DEQUE]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 
     free(s_mer_hashes);
     free(deque);
 }
+
+// static inline void update_minimum_branchless(U64 candidate, U64 *current, size_t candidate_pos, size_t *current_pos)
+// {
+//     uint64_t smaller = (candidate < *current);
+//     U64 mask = -((U64)smaller);
+//     *current = (*current & ~mask) | (candidate & mask);
+//     *current_pos  = (*current_pos & ~mask) | (candidate_pos & mask);
+// }
+
+
+// void compute_closed_syncmers_rescan_branchless(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
+//     // #define CIRCULARARRAYSIZE 27
+//     // if len < K, return
+//     if (length < K){
+//         printf("SEQUENCE SMALLER THAN K.\n") ;
+//         return ;
+//     }
+
+//     U64 seed  = 7 ;
+//     size_t num_s_mers = length - S + 1 ;
+//     size_t num_k_mers = length - K + 1 ;
+//     size_t window_size = K - S + 1 ;
+//     size_t circular_array_size = window_size;
+
+//     size_t computed_syncmers = 0 ;
+//     size_t computed_smers = 0 ;
+
+//     U64 minimum_value = U64MAX;
+
+//     // initialize 
+
+//     Seqhash *sh = seqhashCreate(S, window_size, seed) ;
+//     SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
+
+//     U64 *hashvector = (U64 *)malloc(sizeof(U64) * circular_array_size) ;
+
+//     if (sh == NULL){
+//         printf("sh is null.\n") ;
+//         exit (-1) ;
+//     }
+//     if (si == NULL){
+//         printf("si is null.\n") ;
+//         exit (-1) ;
+//     }
+
+//     U64 current_smer = 0 ;
+
+//     // filling first w-1 elements
+//     for (size_t precompute = 0;  precompute < window_size - 1; precompute++){
+//         seqhashNext(si, &current_smer) ;
+//         hashvector[precompute] = current_smer;
+//         computed_smers++ ;
+//     }
+
+
+//     // 2 - find syncmers
+//     size_t minimum_position = 0;
+//     size_t absolute_kmer_position = 0;
+
+//     //fiund minimum first w-1
+//     for(size_t i =0; i < window_size - 1; i++){
+//         update_minimum_branchless(hashvector[i], &minimum_value, i, minimum_position);
+//     }
+
+//     // scan the rest
+//     size_t leftInWindow;
+//     size_t idx = window_size - 2 ; 
+//     for(size_t i = window_size - 1; i < num_s_mers; i++){
+//         idx = (idx + 1) % window_size;
+//         seqhashNext(si, &current_smer) ;
+
+//         hashvector[idx] = current_smer;
+//          // rescan if minimum out of context
+
+//         leftInWindow = i + 1 - window_size; // earliest valid pos
+
+//         if(minimum_position < leftInWindow){
+//             size_t curr_pos;
+//             minimum_value = U64MAX;
+//             for(size_t j = 1; j < window_size; j++)
+//             {
+//                 curr_pos = (i - window_size + j)%window_size;
+//                 update_minimum_branchless(hashvector[curr_pos], &minimum_value, (i - window_size + j), minimum_position);
+//             }
+                
+//         }
+//         //verify minimum
+//         update_minimum_branchless(hashvector[idx], &minimum_value, i, minimum_position);
+
+//         // minimum_position = get_pos(minimum_value_position);
+//         if (minimum_position == i || minimum_position == i - window_size + 1U) {
+//             computed_syncmers++;
+//         }
+
+//         absolute_kmer_position++;
+//     }
+//     free(si) ;
+
+//     *num_syncmer = computed_syncmers;
+// }

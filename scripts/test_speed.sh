@@ -37,6 +37,7 @@ SMER_SIZE="${SMER_SIZE:-$DEFAULT_SMER_SIZE}"
 MODE="${MODE:-$DEFAULT_MODE}"
 
 echo "TESTING SPEED"
+mkdir -p ./benchmark
 
 echo "Setting cpu to 2.6 GHz."
 echo "[Executing] sudo cpupower frequency-set --governor powersave -d 2.6GHz -u 2.6GHz"
@@ -47,7 +48,7 @@ echo "[Executing] sudo sh -c 'echo off > /sys/devices/system/cpu/smt/control'"
 sudo sh -c 'echo off > /sys/devices/system/cpu/smt/control'
 
 echo "RUNNING SPEED TEST"
-echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
+# echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
 ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE
 
 echo "Re-enabling HYPERTREADING."

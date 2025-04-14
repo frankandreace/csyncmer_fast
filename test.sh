@@ -3,13 +3,15 @@
 set -e 
 
 # TESTING RESULTS ARE CORRECT
-# ./test_correctness.sh
+./scripts/test_correctness.sh
 
 
 # TESTING COMPUTATION SPEED
+
+mkdir -p ./benchmark
 rm -rf benchmark/benchmark.tsv benchmark/benchmark_plot*
 
-for i in {1..20} 
+for i in {1..10} 
 do
     ./scripts/test_speed.sh
 done

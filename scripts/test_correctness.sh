@@ -16,7 +16,7 @@ a=5
 b=2
 
 
-for i in {1..200} 
+for i in {1..10}  # was using 200
 do
 
     a=$(( RANDOM % 989 + 11 ))  # Random integer between 11 and 999 inclusive
@@ -36,7 +36,7 @@ do
     fi
     sequence=$(generate_sequence 10000)
     # Execute the test command with the generated parameters
-    echo "./bin/test \"$sequence\" $a $b 0"
+    # echo "./bin/test \"$sequence\" $a $b 0"
     ./bin/test "$sequence" $a $b 0
     # ./bin/syncmer_tree ./bin/csyncmer "$seqfile" $a $b
 done

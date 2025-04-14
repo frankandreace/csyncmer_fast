@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import pandas as pd
-import matplotlib as mtpl
+import matplotlib.pyplot as plt
 from sys import argv
 
 
@@ -13,10 +13,23 @@ if __name__ == "__main__" :
 
     df = pd.read_csv(file,delimiter="\t")
 
-    # boxplot = df.boxplot(column=["HASHING","NAIVE","DEQUE","RESCAN","RESCAN_CIRCULAR_ARRAY","RESCAN_CA_ITERATOR"] ,rot=30, fontsize=10, figsize=(8,8))
-    # mtpl.pyplot.savefig(f"{outfile}.png")
+    all_columns = ["HASHING","NAIVE","DEQUE","RESCAN","RESCAN_CIRCULAR_ARRAY","RESCAN_CA_ITERATOR"]
 
-    boxplot = df.boxplot(column=["NAIVE","DEQUE","RESCAN","RESCAN_CIRCULAR_ARRAY","RESCAN_CA_ITERATOR"] ,rot=30, fontsize=10, figsize=(8,8))
-    mtpl.pyplot.savefig(f"{outfile}_focus.png", format='png')
+    missing_columns = [col for col in all_columns if col not in df.columns]
+    if missing_columns:
+        raise ValueError(f"The following columns are not in the DataFrame: {missing_columns}")
+
+    syncmer_columns = ["NAIVE","DEQUE","RESCAN","RESCAN_CIRCULAR_ARRAY","RESCAN_CA_ITERATOR"]
+
+    fig1 = plt.figure()
+    boxplot1 = df.boxplot(column=all_columns ,rot=30, fontsize=10, figsize=(6,8))
+    fig1.tight_layout()
+    fig1.savefig(f"{outfile}.png", format='png', dpi=300)
+
+    fig2 = plt.figure()
+    boxplot2 = df.boxplot(column=syncmer_columns, rot=30, fontsize=10, figsize=(6,8))
+
+    fig2.tight_layout()
+    fig2.savefig(f"{outfile}_focus.png", format='png', dpi=300)
 
 

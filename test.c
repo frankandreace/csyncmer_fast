@@ -87,7 +87,7 @@ static inline uint8_t base_to_bits(char base) {
 
     //BENCHMARK FILE
     FILE *filePtr;
-    char* filename = "benchmark.tsv" ;
+    char* filename = "benchmark/benchmark.tsv" ;
 
     bool first_writing = false;
     if (access(filename, F_OK) != 0) {
@@ -103,7 +103,7 @@ static inline uint8_t base_to_bits(char base) {
     }
 
     if (filePtr != NULL && first_writing) { 
-        fprintf(filePtr, "HASHING\tNAIVE\tBRANCHLESS\tRESCAN_CIRCULAR_ARRAY\tRESCAN_CA_ITERATOR\tRESCAN\tDEQUE\n") ; 
+        fprintf(filePtr, "HASHING\tNAIVE\tRESCAN_CIRCULAR_ARRAY\tRESCAN_CA_ITERATOR\tRESCAN\tDEQUE\n") ; 
     }
 
     //benchmark speed for just hashing
@@ -166,8 +166,8 @@ int compute_from_sequence(char *sequence_input, int K, int S){
     size_t smer_size = (size_t)S ;
 
     // convert sequence in binary format
+
     size_t len = strlen(sequence_input);
-    // printf("malloc encoded seq\n") ;
     uint8_t *encoded_seq = malloc(len * sizeof(uint8_t));
     if (encoded_seq == NULL) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -230,7 +230,9 @@ int main(int argc, char *argv[]) {
     int K = atoi(argv[2]);
     int S = atoi(argv[3]);
     int F = atoi(argv[4]);
-    printf("FILE: %s, K: %d, S: %d, F: %d", sequence_input, K, S, F) ;
+
+    // printf("FILE: %s, K: %d, S: %d, F: %d", sequence_input, K, S, F) ;
+
     if(S >= K) {
         fprintf(stderr, "Error: S (%d) must be less than K (%d)\n", S, K);
         return 1;

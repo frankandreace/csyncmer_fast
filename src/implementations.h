@@ -288,7 +288,7 @@ void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size
 
 
 void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length, size_t K, size_t S, size_t *num_syncmer){
-    #define ARRAYSIZE 15
+    #define ARRAYSIZE 21
     // if len < K, return
     if (sequence_length < K){
         printf("SEQUENCE SMALLER THAN K.\n") ;

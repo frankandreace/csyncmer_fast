@@ -375,12 +375,12 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
     free(deque);
 }
 
-// static inline void update_minimum_branchless(U64 candidate, U64 *current, size_t candidate_pos, size_t *current_pos)
+// static inline void update_minimum_branchless(U64 candidate, U64 *current_minimum, size_t candidate_position, size_t *current_minimum_position)
 // {
-//     uint64_t smaller = (candidate < *current);
-//     U64 mask = -((U64)smaller);
-//     *current = (*current & ~mask) | (candidate & mask);
-//     *current_pos  = (*current_pos & ~mask) | (candidate_pos & mask);
+//     // U64 smaller = (candidate < *current_minimum);
+//     U64 mask = -(candidate < *current_minimum);
+//     *current_minimum = (*current_minimum & ~mask) | (candidate & mask);
+//     *current_minimum_position  = (*current_minimum_position & ~mask) | (candidate_position & mask);
 // }
 
 
@@ -435,7 +435,7 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
 
 //     //fiund minimum first w-1
 //     for(size_t i =0; i < window_size - 1; i++){
-//         update_minimum_branchless(hashvector[i], &minimum_value, i, minimum_position);
+//         update_minimum_branchless(hashvector[i], &minimum_value, i, &minimum_position);
 //     }
 
 //     // scan the rest
@@ -456,12 +456,12 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
 //             for(size_t j = 1; j < window_size; j++)
 //             {
 //                 curr_pos = (i - window_size + j)%window_size;
-//                 update_minimum_branchless(hashvector[curr_pos], &minimum_value, (i - window_size + j), minimum_position);
+//                 update_minimum_branchless(hashvector[curr_pos], &minimum_value, (i - window_size + j), &minimum_position);
 //             }
                 
 //         }
 //         //verify minimum
-//         update_minimum_branchless(hashvector[idx], &minimum_value, i, minimum_position);
+//         update_minimum_branchless(hashvector[idx], &minimum_value, i, &minimum_position);
 
 //         // minimum_position = get_pos(minimum_value_position);
 //         if (minimum_position == i || minimum_position == i - window_size + 1U) {

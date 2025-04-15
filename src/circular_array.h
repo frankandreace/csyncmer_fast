@@ -45,18 +45,14 @@ void circularScan(CircularArray *ca){
     U64 current_minimum = U64MAX ;
     size_t current_minimum_position; 
  
-    // printf("START AT %llu, %lu\n",current_minimum, current_minimum_position) ;
     for (int i = 1 ; i < ca->window_size ; i++ ) {
       scan_position = (i + ca->current_position) % ca->window_size ;
-    //   printf("%llu,%lu\t",ca->hashVector[scan_position], scan_position) ;
       if ( ca->hashVector[scan_position] < current_minimum ){
-        // printf("FOUND %llu AT %lu\n",ca->hashVector[scan_position], scan_position ) ;
         current_minimum = ca->hashVector[scan_position] ;
         current_minimum_position = scan_position;
       }
     }
-    // printf("\n") ;
-    // printf("NEW MIN IS %llu at %lu\n", current_minimum, current_minimum_position) ;
+
     ca->minimum = current_minimum ;
     ca->minimum_position = current_minimum_position ;
 }
@@ -72,7 +68,7 @@ void circularInsert(CircularArray *ca, U64 value) {
         ca->minimum_position = ca->current_position - 1 ;
     }
     if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
-    // print_status(ca) ;
+
 }
 
 bool is_syncmer(CircularArray *ca, size_t *position){

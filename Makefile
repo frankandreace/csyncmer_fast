@@ -12,6 +12,7 @@ EXE1_SRCS = test.c syng/seqhash.c syng/utils_d.c
 EXE1_OBJS = $(EXE1_SRCS:.c=.o)
 
 all: mkdir
+all: clean
 all: $(EXE1)
 
 $(EXE1): $(EXE1_OBJS)
@@ -25,6 +26,5 @@ mkdir:
 
 clean:
 	rm -f $(EXE1) $(EXE1_OBJS)
-
 
 .PHONY: all clean

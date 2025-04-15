@@ -69,6 +69,39 @@ void circularInsertBranchless(CircularArray *ca, U64 value) {
     if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
 }
 
+/*---- perform a re-scan of the entire array when the current minimum is out of context and returnt the min and position ----*/
+void circularScan(CircularArray *ca){
+
+    size_t scan_position ;
+    U64 current_minimum = U64MAX ;
+    size_t current_minimum_position; 
+ 
+    for (int i = 1 ; i < ca->window_size ; i++ ) {
+      scan_position = (i + ca->current_position) % ca->window_size ;
+      if ( ca->hashVector[scan_position] < current_minimum ){
+        current_minimum = ca->hashVector[scan_position] ;
+        current_minimum_position = scan_position;
+      }
+    }
+
+    ca->minimum = current_minimum ;
+    ca->minimum_position = current_minimum_position ;
+}
+
+/*---- insert a new element in the circular array----*/
+void circularInsert(CircularArray *ca, U64 value) {
+    // if minimum out of scope, recompute
+    if (ca->minimum_position == ca->current_position) { circularScan(ca) ; }
+
+    ca->hashVector[ca->current_position++] = value;
+    if (value < ca->minimum){
+        ca->minimum = value ;
+        ca->minimum_position = ca->current_position - 1 ;
+    }
+    if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
+
+}
+
 bool is_syncmer(CircularArray *ca, size_t *position){
     //verify if it is at the begin or end of the window
     if (ca->minimum_position == ca->current_position) {

@@ -106,7 +106,7 @@ static inline uint8_t base_to_bits(char base) {
     }
 
     if (filePtr != NULL && first_writing) { 
-        fprintf(filePtr, "HASHING\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tRESCAN_CIRCULAR_ARRAY_BRANCHLESS\tRESCAN_CIRCULAR_ARRAY\tRESCAN_CA_ITERATOR\n") ; 
+        fprintf(filePtr, "HASHING\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tRESCAN_CA_BRANCHLESS\tRESCAN_CA\tRESCAN_CA_ITERATOR\n") ; 
     }
 
     //benchmark speed for just hashing
@@ -128,7 +128,7 @@ static inline uint8_t base_to_bits(char base) {
     compute_closed_syncmers_deque_rayan(encoded_seq, sequence_input_length, K, S, &num_syncmer_deque);
     end_time = clock();
     print_benchmark(deque_name, start_time, end_time, fasta_filename, filePtr) ;
-    if (filePtr != NULL) { fprintf(filePtr, "\n") ; }
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for syng implementation
     start_time = clock();
@@ -163,7 +163,7 @@ static inline uint8_t base_to_bits(char base) {
     compute_closed_syncmers_rescan_iterator(encoded_seq, sequence_input_length, K, S, &num_syncmer_rescan_iterator) ;
     end_time = clock();
     print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr) ;
-    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+    if (filePtr != NULL) { fprintf(filePtr, "\n") ; }
 
     fclose(seqFile) ;
 

@@ -4,9 +4,7 @@
 typedef struct {
     size_t current_position ; // keeps track of the current position in the circula array (for window scanning purposes)
     size_t window_size ; // the number of s-mers in the k-mers (K-S+1)
-    // size_t size ; // is the length of the hashvector
     U64 minimum ;
-    // U64 mask ;
     size_t minimum_position ;
     U64 hashVector[] ; // contains the hashes of the s-mers for the length of a window w
 } CircularArray ;
@@ -49,7 +47,7 @@ static inline void update_minimum_branchless(U64 candidate, U64 *current_minimum
 
 
 /*---- perform a re-scan of the entire array when the current minimum is out of context and returnt the min and position ----*/
-void circularScan(CircularArray *ca){
+void circularScanBranchless(CircularArray *ca){
 
     size_t scan_position ;
     ca->minimum = U64MAX ;
@@ -61,7 +59,7 @@ void circularScan(CircularArray *ca){
 }
 
 /*---- insert a new element in the circular array----*/
-void circularInsert(CircularArray *ca, U64 value) {
+void circularInsertBranchless(CircularArray *ca, U64 value) {
 
     if (ca->minimum_position == ca->current_position) { circularScan(ca) ; }
 

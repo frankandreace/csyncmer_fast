@@ -61,7 +61,7 @@ void circularScanBranchless(CircularArray *ca){
 /*---- insert a new element in the circular array----*/
 void circularInsertBranchless(CircularArray *ca, U64 value) {
 
-    if (ca->minimum_position == ca->current_position) { circularScan(ca) ; }
+    if (ca->minimum_position == ca->current_position) { circularScanBranchless(ca) ; }
 
     ca->hashVector[ca->current_position++] = value;
 

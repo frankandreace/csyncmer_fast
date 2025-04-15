@@ -36,6 +36,81 @@ void compute_closed_syncmers_rescan_iterator(char *sequence_input, size_t length
 
 }
 
+void compute_closed_syncmers_branchless(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
+    // if len < K, return
+    if (length < K){
+        printf("SEQUENCE SMALLER THAN K.\n") ;
+        return ;
+    }
+
+    U64 seed  = 7 ;
+    size_t num_s_mers = length - S + 1 ;
+    size_t num_k_mers = length - K + 1 ;
+    size_t window_size = (size_t)K - (size_t)S + 1 ;
+    size_t computed_syncmers = 0 ;
+    size_t computed_smers = 0 ;
+    // initialize seqhashiterator
+    // CircularArray *ca = circularArrayCreate(window_size) ;
+    CircularArray *ca = circularArrayCreate( window_size) ;
+
+    Seqhash *sh = seqhashCreate(S, window_size, seed) ;
+    SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
+    // Syncmer *sync = (Syncmer *)malloc(sizeof(Syncmer)) ;
+    // if (sync == NULL){
+    //     printf("sync is null.\n") ;
+    //     exit (-1) ;
+    // }
+    if (ca == NULL){
+        printf("ca is null.\n") ;
+        exit (-1) ;
+    }
+    if (sh == NULL){
+        printf("sh is null.\n") ;
+        exit (-1) ;
+    }
+    if (si == NULL){
+        printf("si is null.\n") ;
+        exit (-1) ;
+    }
+
+    U64 current_smer = 0 ;
+    size_t current_position = 0 ;
+    size_t smer_position = 0;
+
+    // 1 - precompute 1st window
+    size_t precompute = 0 ;
+    while(precompute < window_size - 1){
+        bool x = seqhashNext(si, &current_smer);
+        // printf("x is %s, !x is %s\n",  x?"true":"false", !x?"true":"false") ;
+        if(!x){
+            // printf("seqhashnext is false\n") ;
+            exit(1) ;
+        }
+        // printf("PC-HASHED %llu\n", current_smer) ;
+        circularInsertBranchless(ca,current_smer);
+        precompute++;
+        computed_smers++;
+    }
+
+    // 2 - run until end of given sequence
+    while(seqhashNext(si, &current_smer)){
+        // printf("HASHED %llu\n", current_smer) ;
+        computed_smers++ ;
+        circularInsertBranchless(ca, current_smer);
+        if (is_syncmer(ca, &smer_position)){
+            computed_syncmers++ ;
+            // printf("SYNCMER AT POS %lu; S-MER AT %lu\n", current_position, current_position + smer_position);
+        }
+        current_position++ ;
+    }
+    free(ca) ;
+    free(si) ;
+    // qfree(sync) ;
+    printf("[RESCAN_CIRCULAR_ARRAY_BRANCHLESS]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
+    printf("[RESCAN_CIRCULAR_ARRAY_BRANCHLESS]:: HASHED %lu S-MERS\n", computed_smers) ;
+    *num_syncmer = computed_syncmers;
+}
+
 void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
     // if len < K, return
     if (length < K){

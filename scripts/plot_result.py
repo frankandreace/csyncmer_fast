@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from sys import argv
 
 
-
 if __name__ == "__main__" :
     
     file = argv[1]
@@ -23,12 +22,15 @@ if __name__ == "__main__" :
 
     fig1 = plt.figure()
     boxplot1 = df.boxplot(column=all_columns ,rot=30, fontsize=10, figsize=(6,8))
+    boxplot1.set_ylabel("COMPUTATION THROUGHPUT IN MB/s")
+    boxplot1.set_xlabel("TESTED FUNCTIONS")
     fig1.tight_layout()
     fig1.savefig(f"{outfile}.png", format='png', dpi=300)
 
     fig2 = plt.figure()
     boxplot2 = df.boxplot(column=syncmer_columns, rot=30, fontsize=10, figsize=(6,8))
-
+    boxplot2.set_ylabel("COMPUTATION THROUGHPUT IN MB/s")
+    boxplot2.set_xlabel("TESTED FUNCTIONS")
     fig2.tight_layout()
     fig2.savefig(f"{outfile}_focus.png", format='png', dpi=300)
 

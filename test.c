@@ -7,6 +7,8 @@
 #include "src/benchmarking.h"
 #include "src/fasta_reader.h"
 
+#include "syng/syng_syncmers.h"
+
 /*---- conversion of bases (ascii char) into bits ----*/
 static inline uint8_t base_to_bits(char base) {
     switch(base) {
@@ -76,6 +78,7 @@ static inline uint8_t base_to_bits(char base) {
     char * hashing_name = "HASHING" ;
     char * deque_name = "DEQUE" ;
     char * branchless_name = "BRANCHLESS" ;
+    char * syng_original_name = "SYNG ORIGINAL" ;
 
     size_t num_syncmer_rescan;
     size_t num_syncmer_naive;
@@ -103,7 +106,7 @@ static inline uint8_t base_to_bits(char base) {
     }
 
     if (filePtr != NULL && first_writing) { 
-        fprintf(filePtr, "HASHING\tNAIVE\tRESCAN_CIRCULAR_ARRAY\tRESCAN_CA_ITERATOR\tRESCAN\tDEQUE\n") ; 
+        fprintf(filePtr, "HASHING\tNAIVE\tSYNG_ORIGINAL\tRESCAN_CIRCULAR_ARRAY\tRESCAN_CA_ITERATOR\tRESCAN\tDEQUE\n") ; 
     }
 
     //benchmark speed for just hashing
@@ -125,6 +128,12 @@ static inline uint8_t base_to_bits(char base) {
     // end_time = clock();
     // print_benchmark(branchless_name, start_time, end_time, fasta_filename, filePtr) ;
     // if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+
+    start_time = clock();
+    compute_closed_syncmers_syng_original(encoded_seq, sequence_input_length, K, S, &num_syncmer_rescan) ;
+    end_time = clock();
+    print_benchmark(syng_original_name, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for syncmer with rescan and ciruclar array
     start_time = clock();

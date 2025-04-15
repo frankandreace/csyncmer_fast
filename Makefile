@@ -3,10 +3,11 @@ CFLAGS = -march=native -O3
 DEBUG_FLAGS = -DDEBUG -g
 OUTDIR = ./bin
 
+EXE1_LIBS = -lz
 
 EXE1 = bin/test
 
-EXE1_SRCS = test.c 
+EXE1_SRCS = test.c syng/seqhash.c syng/utils_d.c
 
 EXE1_OBJS = $(EXE1_SRCS:.c=.o)
 

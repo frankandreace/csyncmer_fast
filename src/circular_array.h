@@ -53,21 +53,11 @@ void circularScan(CircularArray *ca){
 
     size_t scan_position ;
     ca->minimum = U64MAX ;
-    // size_t current_minimum_position;
  
     for (int i = 1 ; i < ca->window_size ; i++ ) {
       scan_position = (i + ca->current_position) % ca->window_size ;
       update_minimum_branchless(ca->hashVector[scan_position], &ca->minimum, scan_position, &ca->minimum_position) ;
-    //   if ( ca->hashVector[scan_position] < current_minimum ){
-
-    //     current_minimum = ca->hashVector[scan_position] ;
-    //     current_minimum_position = scan_position;
-    //   }
-    
     }
-
-    // ca->minimum = current_minimum ;
-    // ca->minimum_position = current_minimum_position ;
 }
 
 /*---- insert a new element in the circular array----*/
@@ -76,10 +66,7 @@ void circularInsert(CircularArray *ca, U64 value) {
     if (ca->minimum_position == ca->current_position) { circularScan(ca) ; }
 
     ca->hashVector[ca->current_position++] = value;
-    // if (value < ca->minimum){
-    //     ca->minimum = value ;
-    //     ca->minimum_position = ca->current_position - 1 ;
-    // }
+
     update_minimum_branchless(value, &ca->minimum, ca->current_position - 1, &ca->minimum_position) ;
     if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
 }

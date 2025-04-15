@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -march=native -O3
+CFLAGS = -march=native -O3 -fno-tree-vectorize
 DEBUG_FLAGS = -DDEBUG -g
 OUTDIR = ./bin
 

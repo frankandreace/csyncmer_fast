@@ -417,7 +417,9 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
         }
     }
 
+    free(sh) ;
     free(si) ;
+    free(hashvector) ;
 
     printf("[RESCAN_LARGE_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
     printf("[RESCAN_LARGE_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;

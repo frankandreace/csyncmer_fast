@@ -43,7 +43,6 @@ echo "Setting cpu to 2.6 GHz."
 echo "[Executing] sudo cpupower frequency-set --governor powersave -d 2.6GHz -u 2.6GHz"
 sudo cpupower frequency-set --governor powersave -d 2.6GHz -u 2.6GHz
 
-
 SMT_STATUS=$(cat /sys/devices/system/cpu/smt/control)
 
 if [ "$SMT_STATUS" = "on" ]; then

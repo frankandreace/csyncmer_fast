@@ -287,31 +287,35 @@ void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size
 }
 
 
-void compute_closed_syncmers_rescan(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
-    #define CIRCULARARRAYSIZE 27
+void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length, size_t K, size_t S, size_t *num_syncmer){
+    #define ARRAYSIZE 15
     // if len < K, return
-    if (length < K){
+    if (sequence_length < K){
         printf("SEQUENCE SMALLER THAN K.\n") ;
         return ;
     }
 
+    if(K - S + 1 > (1 << ARRAYSIZE)){
+        printf("WINDOW SIZE > BUFFER LENGTH.\n") ;
+        return ;
+    }
+
+    // initialization
+
     U64 seed  = 7 ;
-    size_t num_s_mers = length - S + 1 ;
-    size_t num_k_mers = length - K + 1 ;
+    size_t num_s_mers = sequence_length - S + 1 ;
+    size_t num_k_mers = sequence_length - K + 1 ;
     size_t window_size = K - S + 1 ;
-    size_t circular_array_size = (1 << CIRCULARARRAYSIZE);
+    size_t array_size = (1 << ARRAYSIZE);
     size_t computed_syncmers = 0 ;
     size_t computed_smers = 0 ;
 
-    // initialize 
-
     Seqhash *sh = seqhashCreate(S, window_size, seed) ;
-    SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
+    SeqhashIterator *si = seqhashIterator(sh, sequence_input, sequence_length) ;
 
+    U64 *hashvector = (U64 *)malloc(sizeof(U64) * array_size) ;
 
-
-    U64 *hashvector = (U64 *)malloc(sizeof(U64) * circular_array_size) ;
-
+    // checking pointers are fine
     if (sh == NULL){
         printf("sh is null.\n") ;
         exit (-1) ;
@@ -321,77 +325,104 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t length, size_t 
         exit (-1) ;
     }
 
+    // syncmer computation values
+
     U64 current_smer = 0 ;
-    size_t current_position = 0 ;
-    size_t smer_position = 0;
 
-    // 1 - fill the 
-    size_t precompute = 0 ;
-    size_t precompute_elements = num_s_mers < circular_array_size ? num_s_mers : circular_array_size ;
+    size_t current_position = 0;
 
-    while(precompute < precompute_elements){
-        seqhashNext(si, &current_smer);
-        // printf("%llu ", current_smer) ;
-        hashvector[precompute] = current_smer;
-        precompute++;
-        computed_smers++;
-    }
-    // printf("\n") ;
-
-    // 2 - find syncmers
     U64 minimum = U64MAX;
     size_t minimum_position;
     size_t absolute_kmer_position = 0;
 
-    //precompute first window
-    for(size_t i =0; i < window_size - 1; i++){
-        if (hashvector[i] < minimum){
-            minimum = hashvector[i] ;
-            minimum_position = i;
-        }
+    bool first_loop = true ;
+
+    // precompute first w-1 elements
+    while(current_position < window_size - 1){
+
+        seqhashNext(si, &current_smer);
+        hashvector[current_position] = current_smer;
+        
+        current_position++;
+        computed_smers++;
     }
-    // printf("AT PRECOMPUTE MIN IS %llu, POS IS %lu\n", minimum, minimum_position) ;
-    // scan the rest of the array
-    for(size_t i = window_size - 1; i < precompute_elements; i++){
-         // rescan if minimum out of context
-        // printf("min_pos is %lu, comparison is %lu\n", minimum_position, i - window_size + 1) ;
-        if(minimum_position < i - window_size + 1){
-            // printf("recompute\n");
-            size_t curr_pos;
-            minimum = U64MAX;
-            for(int j = 1; j < window_size; j++){
-                curr_pos = i - window_size + j;
-                if ( hashvector[curr_pos] < minimum ){
-                    // printf("FOUND %llu AT %lu\n",ca->hashVector[scan_position], scan_position ) ;
-                    minimum = hashvector[curr_pos] ;
-                    minimum_position = curr_pos;
-                  }
+
+    size_t len_scan = (num_s_mers < array_size) ? num_s_mers : array_size;
+
+    while (num_s_mers > 0) {
+
+        //scan the first w-1 to update minimum
+        for(size_t i = 0; i < window_size - 1; i++){
+            if (hashvector[i] < minimum){
+                minimum = hashvector[i] ;
+                minimum_position = i;
             }
-            // printf("RESCAN. MIN: %llu; POS: %lu\n", minimum, minimum_position) ;
         }
 
-        //verify minimum
-        if (hashvector[i] < minimum){
-            minimum = hashvector[i] ;
-            minimum_position = i;
-        }
-        // printf("MIN IS %llu, pos is %lu, i is %lu, start is %lu\n", minimum, minimum_position, i, i - window_size + 1) ;
-        if(i == minimum_position || minimum_position == i - window_size + 1){
-            // printf("%llu\t%lu\n", minimum, minimum_position);
-            computed_syncmers++;
+        // finishing computing hashes in the vector
+        while(current_position < len_scan){
+
+            seqhashNext(si, &current_smer);
+            hashvector[current_position] = current_smer;
+
+            current_position++;
+            computed_smers++;
         }
 
-        absolute_kmer_position++;
+        // 2 - find syncmers
+        // scan the rest of the array
+        for(size_t i = window_size - 1; i < len_scan; i++){
+            
+            // rescan last w-1 elements if minimum out of context
+            if(minimum_position < i - window_size + 1){
+                size_t curr_pos;
+                minimum = U64MAX ;
+                for(int j = 1; j < window_size; j++){
+                    curr_pos = i - window_size + j;
+                    if ( hashvector[curr_pos] < minimum ){
+                        minimum = hashvector[curr_pos] ;
+                        minimum_position = curr_pos;
+                    }
+                }
+            }
+
+            //update minimum
+            if (hashvector[i] < minimum){
+                minimum = hashvector[i] ;
+                minimum_position = i;
+            }
+
+            //check syncmer condition
+            if(i == minimum_position || minimum_position == i - window_size + 1){
+                computed_syncmers++;
+            }
+
+            //advcance k-mer condition
+            absolute_kmer_position++;
+        }
+
+        //if I need to loop again, transfer the last w-1 elements at the beginnig to continue the scan
+        if (num_s_mers > array_size){
+            for(size_t i = 0; i < window_size - 1; i++){
+                hashvector[i] = hashvector[array_size - window_size + 1 + i] ;
+            }
+            num_s_mers = (first_loop) ? num_s_mers - len_scan: num_s_mers - len_scan + window_size - 1 ;
+            len_scan = (num_s_mers + window_size - 1 < array_size) ? num_s_mers + window_size - 1 : array_size;
+            first_loop = false;
+            minimum = U64MAX;
+            current_position = window_size - 1;
+        }
+        else{
+            break;
+        }
     }
 
-    // free(ca) ;
     free(si) ;
-    // free(sync) ;
+
     printf("[RESCAN_LARGE_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
     printf("[RESCAN_LARGE_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 }
-
 
 void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
     if(length < K) {

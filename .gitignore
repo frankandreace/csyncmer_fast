@@ -5,3 +5,4 @@ benchmark.tsv
 benchmark_plot*
 benchmark/
 *.o
+data/chr1.fa

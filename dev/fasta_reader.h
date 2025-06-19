@@ -86,7 +86,7 @@ int stream_getnext(stream *S) {
 stream *stream_open_fasta(FILE *fin) {
     if (!fin)
         return NULL;
-    stream *S = malloc(sizeof(stream));
+    stream *S = (stream*)malloc(sizeof(stream));
     if (!S) {
         fprintf(stderr, "Not enough memory\n");
         exit(1);
@@ -108,7 +108,7 @@ stream *stream_open_fasta(FILE *fin) {
 char *read_sequence(struct stream *S) {
     size_t capacity = INITIAL_BUF_SIZE;
     size_t len = 0;
-    char *sequence = malloc(capacity);
+    char *sequence = (char*)malloc(capacity);
     if (!sequence) {
         fprintf(stderr, "Memory allocation failure\n");
         return NULL;
@@ -119,7 +119,7 @@ char *read_sequence(struct stream *S) {
         sequence[len++] = (char)c;
         if (len >= capacity) {
             capacity *= 2;
-            char *tmp = realloc(sequence, capacity);
+            char *tmp = (char*)realloc(sequence, capacity);
             if (!tmp) {
                 free(sequence);
                 fprintf(stderr, "Memory allocation failure during expansion\n");

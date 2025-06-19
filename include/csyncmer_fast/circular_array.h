@@ -29,7 +29,7 @@ static void circularArrayDestroy (CircularArray *ca) { free (ca) ; }
 // print array status
 void print_status(CircularArray *ca){
     printf("[") ;
-    for (int i = 0 ; i < ca->window_size ; i++ ) {
+    for (size_t i = 0 ; i < ca->window_size ; i++ ) {
         printf("%llu,", ca->hashVector[i]) ;
     }
     printf("]\n") ;
@@ -52,7 +52,7 @@ void circularScanBranchless(CircularArray *ca){
     size_t scan_position ;
     ca->minimum = U64MAX ;
  
-    for (int i = 1 ; i < ca->window_size ; i++ ) {
+    for (size_t i = 1 ; i < ca->window_size ; i++ ) {
       scan_position = (i + ca->current_position) % ca->window_size ;
       update_minimum_branchless(ca->hashVector[scan_position], &ca->minimum, scan_position, &ca->minimum_position) ;
     }
@@ -76,7 +76,7 @@ void circularScan(CircularArray *ca){
     U64 current_minimum = U64MAX ;
     size_t current_minimum_position; 
  
-    for (int i = 1 ; i < ca->window_size ; i++ ) {
+    for (size_t i = 1 ; i < ca->window_size ; i++ ) {
       scan_position = (i + ca->current_position) % ca->window_size ;
       if ( ca->hashVector[scan_position] < current_minimum ){
         current_minimum = ca->hashVector[scan_position] ;
@@ -99,7 +99,6 @@ void circularInsert(CircularArray *ca, U64 value) {
         ca->minimum_position = ca->current_position - 1 ;
     }
     if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
-
 }
 
 bool is_syncmer(CircularArray *ca, size_t *position){

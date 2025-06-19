@@ -1,6 +1,7 @@
 // #include "circular_array.h"
 // #include "hashing.h"
 #include "csyncmer_fast_iterator.h"
+#include "nthash_wrapper.h"
 
 typedef struct
 {
@@ -44,8 +45,8 @@ void compute_closed_syncmers_branchless(char *sequence_input, size_t length, siz
     }
 
     U64 seed  = 7 ;
-    size_t num_s_mers = length - S + 1 ;
-    size_t num_k_mers = length - K + 1 ;
+    // size_t num_s_mers = length - S + 1 ;
+    // size_t num_k_mers = length - K + 1 ;
     size_t window_size = (size_t)K - (size_t)S + 1 ;
     size_t computed_syncmers = 0 ;
     size_t computed_smers = 0 ;
@@ -119,8 +120,8 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
     }
 
     U64 seed  = 7 ;
-    size_t num_s_mers = length - S + 1 ;
-    size_t num_k_mers = length - K + 1 ;
+    // size_t num_s_mers = length - S + 1 ;
+    // size_t num_k_mers = length - K + 1 ;
     size_t window_size = (size_t)K - (size_t)S + 1 ;
     size_t computed_syncmers = 0 ;
     size_t computed_smers = 0 ;
@@ -194,7 +195,7 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
 
     // setting the seed to 7 as in Durbin's
     U64 seed  = 7;
-    U64 num_results = 0;
+    // U64 num_results = 0;
 
     size_t num_s_mers = length - S + 1;
     size_t num_k_mers = length - K + 1;
@@ -209,7 +210,7 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
 
     U64 smer;
     size_t s_pos = 0;
-    bool hashnext;
+    // bool hashnext;
 
     // HASH ALL S-MERS
     // printf("starting hashing\n") ;
@@ -225,8 +226,8 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
     // printf("HASHED %lu s-mers\n", computed_smers) ;
     if (computed_smers == 0){ exit(-1) ;}
 
-    size_t front = 0, back = 0;
-    int min_pos;
+    // size_t front = 0, back = 0;
+    size_t min_pos;
     U64 min_smer;
 
     // USE ARRAY SCAN TO COMPUTE SYNCMERS IN O(N*K)
@@ -259,11 +260,12 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
     printf("[NAIVE]:: HASHED %lu S-MERS\n", computed_smers) ; 
 }
 
+
 void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size_t S){
     //
     U64 seed  = 7;
-    size_t num_s_mers = length - S + 1;
-    size_t num_k_mers = length - K + 1;
+    // size_t num_s_mers = length - S + 1;
+    // size_t num_k_mers = length - K + 1;
     size_t window_size = (size_t)K - (size_t)S + 1;
     size_t computed_smers = 0 ;
 
@@ -304,7 +306,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
 
     U64 seed  = 7 ;
     size_t num_s_mers = sequence_length - S + 1 ;
-    size_t num_k_mers = sequence_length - K + 1 ;
+    // size_t num_k_mers = sequence_length - K + 1 ;
     size_t window_size = K - S + 1 ;
     size_t array_size = (1 << ARRAYSIZE);
     size_t computed_syncmers = 0 ;
@@ -377,7 +379,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
             if(minimum_position < i - window_size + 1){
                 size_t curr_pos;
                 minimum = U64MAX ;
-                for(int j = 1; j < window_size; j++){
+                for(size_t j = 1; j < window_size; j++){
                     curr_pos = i - window_size + j;
                     if ( hashvector[curr_pos] < minimum ){
                         minimum = hashvector[curr_pos] ;
@@ -434,7 +436,7 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
 
     U64 seed  = 7 ;
     size_t num_s_mers = length - S + 1 ;
-    size_t num_k_mers = length - K + 1 ;
+    // size_t num_k_mers = length - K + 1 ;
     size_t window_size = K - S + 1 ;
 
     U64 current_smer = 0 ;
@@ -482,6 +484,32 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
     free(s_mer_hashes);
     free(deque);
 }
+
+void compute_closed_syncmers_naive_nthash(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
+
+    // size_t window_size = K - S + 1;
+    // size_t total_kmers = length - K + 1;
+    // size_t total_smers = length - S + 1; 
+    *num_syncmer = 0; // placeholder to avoid unused variable
+
+    NtHashHandle rolling_hash = nthash_create(sequence_input, S, 2);
+
+    // initialize the nthash object
+
+    // get first K - S s-mer hashes
+
+    // loop over the remaing s-mer hashes and each time verify the closed syncmer condition
+} 
+
+
+
+
+
+
+
+
+
+
 
 // static inline void update_minimum_branchless(U64 candidate, U64 *current_minimum, size_t candidate_position, size_t *current_minimum_position)
 // {

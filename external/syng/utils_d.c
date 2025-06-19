@@ -141,11 +141,11 @@ FILE *fzopen(const char *path, const char *mode)
   /* open file pointer */
 #ifdef __linux__
   { cookie_io_functions_t io_funcs ;
-    io_funcs.read  = (void*) gzread ; // the void* are for cross-compiler happiness
-    io_funcs.write = (void*) gzwrite ;
-    io_funcs.seek  = (void*) gzseek ;
-    io_funcs.close = (void*) gzclose ;
-    return fopencookie (zfp, mode, io_funcs) ;
+    io_funcs.read  = (__ssize_t(*)(void*, char*, size_t))gzread ; // the void* are for cross-compiler happiness
+    io_funcs.write = (__ssize_t(*)(void*, const char*, size_t))gzwrite ;
+    io_funcs.seek  = (int(*)(void*, __off64_t*, int))gzseek ;
+    io_funcs.close = (int(*)(void*))gzclose ;
+    return fopencookie ((void*)zfp, mode, io_funcs) ;
   }
 #else // assume a Mac
   return funopen(zfp,

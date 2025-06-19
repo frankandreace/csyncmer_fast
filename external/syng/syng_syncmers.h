@@ -22,7 +22,7 @@ void compute_closed_syncmers_syng_original(char *sequence_input, int len, int K,
     SeqhashIteratorD *si = syncmerIteratorD(sh, sequence_input, len); 
     size_t count = 0 ;
 
-    if (si->iMin != U64MAXD) {
+    if (si->iMin != I32MAX) {
         U64 kmer ;
         size_t s_pos = U64MAXD;
         size_t last_k_pos;

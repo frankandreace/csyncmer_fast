@@ -2,6 +2,10 @@
 
 set -e 
 
+SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+
+cd "$SCRIPT_DIR"
+
 generate_sequence() {
     local len=$1
     local seq=""
@@ -37,7 +41,7 @@ do
     sequence=$(generate_sequence 10000)
     # Execute the test command with the generated parameters
     # echo "./bin/test \"$sequence\" $a $b 0"
-    ./bin/test "$sequence" $a $b 0
+    ../build/bin/test "$sequence" $a $b 0
     # ./bin/syncmer_tree ./bin/csyncmer "$seqfile" $a $b
 done
 

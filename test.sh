@@ -2,18 +2,23 @@
 
 set -e 
 
+# GETTING THE DIRECTORY OF THE SCRIPT
+SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+
+cd "$SCRIPT_DIR"
+
+#From now on all the paths are relative to here
+
 # TESTING RESULTS ARE CORRECT
 ./scripts/test_correctness.sh
 
 
 # TESTING COMPUTATION SPEED
-
-mkdir -p ./benchmark
-rm -rf benchmark/benchmark.tsv benchmark/benchmark_plot*
+rm -rf benchmark/results/benchmark.tsv benchmark/results/benchmark_plot*
 
 for i in {1..10} 
 do
     ./scripts/test_speed.sh
 done
 
-./scripts/plot_result.py benchmark/benchmark.tsv benchmark/benchmark_plot
+./scripts/plot_result.py benchmark/results/benchmark.tsv benchmark/results/benchmark_plot

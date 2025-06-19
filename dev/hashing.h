@@ -1,4 +1,4 @@
-#include "utils.h"
+#include "csyncmer_fast/utils.h"
 
 /*---- STRUCTURES ----*/
 

@@ -37,8 +37,7 @@ SMER_SIZE="${SMER_SIZE:-$DEFAULT_SMER_SIZE}"
 MODE="${MODE:-$DEFAULT_MODE}"
 
 echo "TESTING SPEED"
-mkdir -p ./benchmark
+mkdir -p ../benchmark/results
 
 echo "RUNNING SPEED TEST"
-# echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
 ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE

@@ -2,9 +2,12 @@
 
 set -e 
 
+SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+
+cd "$SCRIPT_DIR"
 
 # Default values
-DEFAULT_FILE="data/chr19_bit.fa"
+DEFAULT_FILE="../data/chr19_bit.fa"
 DEFAULT_KMER_SIZE=31
 DEFAULT_SMER_SIZE=11
 DEFAULT_MODE=1
@@ -35,9 +38,10 @@ FILE="${FILE:-$DEFAULT_FILE}"
 KMER_SIZE="${KMER_SIZE:-$DEFAULT_KMER_SIZE}"
 SMER_SIZE="${SMER_SIZE:-$DEFAULT_SMER_SIZE}"
 MODE="${MODE:-$DEFAULT_MODE}"
+OUTFILE="../benchmark/results/benchmark.tsv"
 
 echo "TESTING SPEED"
-mkdir -p ./benchmark
+mkdir -p "../benchmark/results"
 
 echo "Setting cpu to 2.6 GHz."
 echo "[Executing] sudo cpupower frequency-set --governor powersave -d 2.6GHz -u 2.6GHz"
@@ -55,7 +59,7 @@ fi
 
 echo "RUNNING SPEED TEST"
 # echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
-./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE
+../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
 
 if [ "$SMT_STATUS" = "on" ]; then
     echo "Re-enabling HYPERTREADING."

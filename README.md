@@ -66,14 +66,18 @@ https://github.com/richarddurbin/syng/
 
 ### TO DO LIST:
 
+- [ ] Add unit tests for rescan
+- [ ] Write nextflow pipeline for benchmark
+- [ ] Add simd_minimizer benchmark
+- [ ] Add 
+- [ ] Restructure folder as benchmarking folder
+- [ ] Integrate Prof Sadakane AVX hashing
+- [ ] Integrate Prof Sadakane AVX syncmer computation
 - [x] Rescan function implementation
 - [x] Unit test it
 - [x] Wrap it for time and throughput estimation
 - [x] Test on file for speed
-- [ ] Add Makefile
-- [ ] Rescan iterator implementation
-- [ ] Integrate Prof Sadakane AVX hashing
-- [ ] Integrate Prof Sadakane AVX syncmer computation
-- [ ] Run speed test on them
-- [ ] Python script to plot
-- [ ] Update README
+- [x] Add Makefile
+- [x] Rescan iterator implementation
+- [x] Run speed test on them
+- [x] Python script to plot

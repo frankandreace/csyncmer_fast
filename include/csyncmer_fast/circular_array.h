@@ -24,7 +24,7 @@ CircularArray *circularArrayCreate(size_t window_size) {
     return ca ;
 }
 
-static void circularArrayDestroy (CircularArray *ca) { free (ca) ; }
+static void circularArrayDestroy (CircularArray *ca) {if (ca != NULL) free(ca);}
 
 // print array status
 void print_status(CircularArray *ca){

@@ -27,13 +27,13 @@ static inline char base_to_bits(char base) {
     FILE *seqFile;
     seqFile = fopen(fasta_filename,"r");
     stream *seqStream = stream_open_fasta(seqFile) ;
-    char *sequence_input = read_sequence(seqStream) ;
+    const char *sequence_input = read_sequence(seqStream) ;
     size_t sequence_input_length = strlen(sequence_input) ;
 
     printf("SEQ SIZE IS %ld\n", sequence_input_length) ;
 
     // ENCODING ASCII INTO 2-BIT AGCT ENCODING
-    char *encoded_seq = (char*)malloc(sequence_input_length * sizeof(uint8_t));
+    char *encoded_seq = (char*)malloc(sequence_input_length * sizeof(char));
     if (encoded_seq == NULL) {
         fprintf(stderr, "Memory allocation failed\n");
         return 1;
@@ -55,16 +55,8 @@ static inline char base_to_bits(char base) {
     }
     printf("\n") ;
 
-    for (int i = 0; i < 20; i++){
-        printf("%u,", encoded_seq[i]) ;
-    }
-    printf("\n") ;
-    for (int i = 0; i < 20; i++){
-        printf("%u,", encoded_seq[i]) ;
-    }
-    printf("\n") ;
-
     stream_close(seqStream);
+    fclose(seqFile) ;
 
 
     // BENCHMARKING TIME
@@ -72,6 +64,7 @@ static inline char base_to_bits(char base) {
     const char * rescan_name2 = "RESCAN ARRAY" ;
     const char * naive_name = "NAIVE" ;
     const char * hashing_name = "HASHING" ;
+    const char * nt_hashing_name = "NT_HASHING" ;
     const char * deque_name = "DEQUE" ;
     const char * branchless_name = "BRANCHLESS" ;
     const char * syng_original_name = "SYNG ORIGINAL" ;
@@ -101,7 +94,7 @@ static inline char base_to_bits(char base) {
     }
 
     if (filePtr != NULL && first_writing) { 
-        fprintf(filePtr, "HASHING\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tRESCAN_CA_BRANCHLESS\tRESCAN_CA\tRESCAN_CA_ITERATOR\n") ; 
+        fprintf(filePtr, "HASHING\tNT_HASHING\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tRESCAN_CA_BRANCHLESS\tRESCAN_CA\tRESCAN_CA_ITERATOR\n") ; 
     }
 
     //benchmark speed for just hashing
@@ -109,6 +102,13 @@ static inline char base_to_bits(char base) {
     hahsing_speed_benchmark(encoded_seq, sequence_input_length, K, S) ;
     end_time = clock();
     print_benchmark(hashing_name, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+
+    start_time = clock();
+    printf("BENCHING NTHASH\n");
+    nthash_benchmark(sequence_input, sequence_input_length, K, S);
+    end_time = clock();
+    print_benchmark(nt_hashing_name, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for naive
@@ -160,8 +160,9 @@ static inline char base_to_bits(char base) {
     print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\n") ; }
 
-    fclose(seqFile) ;
-
+    fclose(filePtr) ;
+    free(encoded_seq);
+    free((void*)sequence_input);
     return 0;
     
 }

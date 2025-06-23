@@ -21,8 +21,9 @@ typedef struct
 } syncmerIterator;
 
 void syncmerIteratorDestroy(syncmerIterator *syncit){
-    free(syncit->ca) ;
-    free(syncit->si) ;
+    SeqhashIteratorDestroy(syncit->si);
+    circularArrayDestroy(syncit->ca) ;
+    free(syncit);
 }
 
 syncmerIterator *syncmerIteratorInitialization(int K, int S, char *sequence, size_t sequence_length){

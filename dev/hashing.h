@@ -97,6 +97,21 @@ SeqhashIterator *seqhashIterator (Seqhash *sh, char *s, int len)
     return si ;
 }
 
+static void SeqhashDestroy(Seqhash* sh){ free(sh);}
+
+static void SeqhashIteratorDestroy (SeqhashIterator *si)
+{ 
+  // prevent double free
+  if (si == NULL) return;
+  if (si->sh != NULL) {
+    //Free the seqhash
+    SeqhashDestroy(si->sh);
+    si->sh = NULL; // prevent double free
+  } 
+  // free the struct
+  free(si);
+}
+
 bool seqhashNext (SeqhashIterator *si, U64 *kmer)
 {
     if (si->isDone){

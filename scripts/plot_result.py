@@ -12,7 +12,7 @@ if __name__ == "__main__" :
 
     df = pd.read_csv(file,delimiter="\t")
 
-    all_columns = ["HASHING","NAIVE","DEQUE","SYNG_ORIGINAL","RESCAN","RESCAN_CA_BRANCHLESS","RESCAN_CA","RESCAN_CA_ITERATOR"]
+    all_columns = ["HASHING","NT_HASHING","NAIVE","DEQUE","SYNG_ORIGINAL","RESCAN","RESCAN_CA_BRANCHLESS","RESCAN_CA","RESCAN_CA_ITERATOR"]
 
     missing_columns = [col for col in all_columns if col not in df.columns]
     if missing_columns:

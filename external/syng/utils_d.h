@@ -40,7 +40,7 @@ typedef unsigned long long U64 ;
 const static U64 U64MAXD = 0xffffffffffffffff ;
 #endif
 
-void die  (char *format, ...) ;
+void die  (const char *format, ...) ;
 void warn (char *format, ...) ;
 
 void *myalloc  (size_t size) ;

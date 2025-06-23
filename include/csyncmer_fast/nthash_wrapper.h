@@ -2,10 +2,11 @@
 #define NTHASH_WRAPPER_H
 
 #include <stdint.h> // for uint64_t
+#include <stddef.h>
 
 // Checking for __uint128_t support (in GCC or CLANG)
 #if defined(__SIZEOF_INT128__)
-    typedef __uint128_t NtHash128;
+    typedef __uint128_t U128;
 #else
     #error "__uint128_t is not supported by your compiler. Please use a GCC/Clang compatible compiler."
 #endif
@@ -32,7 +33,7 @@ typedef void* NtHashHandle;
  * @param hash_length 1 for 64-bit canonical, 2 for 128-bit canonical.
  * @return An opaque handle to the NtHash object, or NULL on failure.
  */
-NtHashHandle nthash_create(const char* sequence, unsigned int k, unsigned int hash_length);
+NtHashHandle nthash_create(const char* sequence, size_t sequence_length, unsigned int k, unsigned int hash_length);
 
 /**
  * @brief Rolls the hash window to the next k-mer.
@@ -55,7 +56,7 @@ uint64_t nthash_get_forward_hash(NtHashHandle handle);
  * @param handle Handle to the NtHash object.
  * @return The 128-bit canonical hash.
  */
-NtHash128 nthash_get_canonical_hash_128(NtHashHandle handle);
+U128 nthash_get_canonical_hash_128(NtHashHandle handle);
 
 /**
  * @brief Destroys the NtHash object and frees allocated memory.
@@ -78,6 +79,7 @@ void nthash_destroy(NtHashHandle handle);
 #include <csyncmer_fast/nthash/nthash.hpp> // The actual ntHash C++ library header
 #include <vector>             // For std::vector
 #include <stdexcept>          // For std::runtime_error (or other exceptions)
+#include <iostream>
 
 // Anonymous namespace or internal linkage to prevent symbol clashes
 namespace{
@@ -94,11 +96,11 @@ inline nthash::NtHash* get_nthash_obj(NtHashHandle handle){
 // Implementations of the C functions, using the extern "C" linkage.
 // Marked as 'inline' to suggest the compiler to inline them,
 // which is standard for header-only libraries.
-
-extern "C" inline NtHashHandle nthash_create(const char* sequence, unsigned int k, unsigned int hash_length){
+extern "C" inline NtHashHandle nthash_create(const char* sequence, size_t sequence_length, unsigned int k, unsigned int hash_length){
     try{
-        return new nthash::NtHash(sequence, hash_length, k);
+        return new nthash::NtHash(sequence, sequence_length, hash_length, k);
     } catch (const std::exception& e){
+        std::cerr << "CONSTRUCTION OF NTHASH FAILED MISERABLY.\n" << std::endl;
         return nullptr;
     }
 }
@@ -116,17 +118,18 @@ extern "C" inline uint64_t nthash_get_forward_hash(NtHashHandle handle){
 }
 
 extern "C" inline NtHash128 nthash_get_canonical_hash_128(NtHashHandle handle){
-    NtHash128 result = 0;
+    U128 result = 0;
     try {
         const uint64_t* hashes_ptr = get_nthash_obj(handle)->hashes();
-        result = ((NtHash128)hashes_ptr[1] << 64) | hashes_ptr[0];
+        result = ((U128)hashes_ptr[1] << 64) | hashes_ptr[0];
     } catch (...) {}
     return result;
 }
 
 extern "C" inline void nthash_destroy(NtHashHandle handle) {
     try {
-        delete get_nthash_obj(handle); // Use get_nthash_obj to check handle validity
+        // before I deleted get_nthash_obj(handle);
+        delete static_cast<nthash::NtHash*>(handle); // Use get_nthash_obj to check handle validity
     } catch (...) { /* ignore errors during destruction */ }
 }
 

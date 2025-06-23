@@ -20,7 +20,7 @@
 #include <ctype.h>
 #include "utils_d.h"
 
-void die (char *format, ...)
+void die (const char *format, ...)
 {
   va_list args ;
 

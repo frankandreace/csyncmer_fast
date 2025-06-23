@@ -32,6 +32,7 @@ void compute_closed_syncmers_rescan_iterator(char *sequence_input, size_t length
     } 
     *num_syncmer = computed_syncmer ;
     syncmerIteratorDestroy(syncmer_iterator);
+    // free(syncmer_iterator);
 
     printf("[RESCAN_ITERATOR]:: COMPUTED %llu CLOSED SYNCMERS\n", computed_syncmer) ; 
 
@@ -104,7 +105,8 @@ void compute_closed_syncmers_branchless(char *sequence_input, size_t length, siz
         }
         current_position++ ;
     }
-    free(ca) ;
+    circularArrayDestroy(ca) ;
+    free(sh) ;
     free(si) ;
     // qfree(sync) ;
     printf("[RESCAN_CIRCULAR_ARRAY_BRANCHLESS]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
@@ -180,6 +182,7 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
         current_position++ ;
     }
     free(ca) ;
+    free(sh) ;
     free(si) ;
     // qfree(sync) ;
     printf("[RESCAN_CIRCULAR_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
@@ -255,6 +258,8 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
 
     // releasing memory
     free(s_mer_hashes) ;
+    free(sh);
+    free(si);
     *num_syncmer = computed_syncmers;
     printf("[NAIVE]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ; 
     printf("[NAIVE]:: HASHED %lu S-MERS\n", computed_smers) ; 
@@ -284,6 +289,8 @@ void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size
         computed_smers++;
         current_position++;
     }
+    free(si);
+    free(sh);
     printf("[HASHING_BENCHMARK]:: HASHED %lu S-MERS\n", computed_smers) ; 
 
 }
@@ -481,28 +488,54 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
     printf("[DEQUE]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 
+    free(sh);
+    free(si);
     free(s_mer_hashes);
     free(deque);
 }
 
-void compute_closed_syncmers_naive_nthash(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
+// void compute_closed_syncmers_naive_nthash(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
 
-    // size_t window_size = K - S + 1;
-    // size_t total_kmers = length - K + 1;
-    // size_t total_smers = length - S + 1; 
-    *num_syncmer = 0; // placeholder to avoid unused variable
+//     // size_t window_size = K - S + 1;
+//     // size_t total_kmers = length - K + 1;
+//     // size_t total_smers = length - S + 1; 
+//     *num_syncmer = 0; // placeholder to avoid unused variable
 
-    NtHashHandle rolling_hash = nthash_create(sequence_input, S, 2);
+//     NtHashHandle rolling_hash = nthash_create(sequence_input, S, 2);
 
+//     // initialize the nthash object
+
+//     // get first K - S s-mer hashes
+
+//     // loop over the remaing s-mer hashes and each time verify the closed syncmer condition
+// } 
+
+
+void nthash_benchmark(const char *sequence_input, size_t length, size_t K, size_t S){
     // initialize the nthash object
+    NtHashHandle rolling_hash = nthash_create(sequence_input,strlen(sequence_input), S, 2);
+    // --- CRITICAL CHECK: Did nthash_create succeed? ---
+    if (rolling_hash == NULL) {
+        // fprintf(stderr, "[NT_HASH_BENCH_ERROR]:: Failed to initialize NtHash object. Check sequence/S-mer size. Aborting.\n");
+        return; // Exit if initialization failed to prevent segfault
+    }
 
-    // get first K - S s-mer hashes
+    // loop over the s-mer hashes
+    __uint128_t current_hash;
+    size_t count = 0;
+    // int roll_result = 1;
 
-    // loop over the remaing s-mer hashes and each time verify the closed syncmer condition
-} 
+    while(nthash_roll(rolling_hash)){
+        current_hash = nthash_get_canonical_hash_128(rolling_hash);
+    //     // print_uint128_hex_debug(current_hash);
+        count++;
 
-
-
+    //     roll_result = 0;
+    }
+    printf("[NT_HASH_BENCH]:: HASHED %lu S-MERS\n", count);
+    nthash_destroy(rolling_hash);
+    return;
+}
 
 
 

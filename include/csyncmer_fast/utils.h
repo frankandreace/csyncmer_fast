@@ -14,5 +14,16 @@ const static U64 U64MAX = 0xffffffffffffffff ;
 
 const static __uint128_t U128MAX = (__uint128_t)(-1) ;
 
+static inline int u128_lt(__uint128_t a, __uint128_t b) {
+    return __builtin_ult128(a, b);
+}
+
+// Helper function to print __uint128_t in hexadecimal (still needed for printf)
+void print_uint128_hex_debug(__uint128_t val) {
+    uint64_t high = (uint64_t)(val >> 64);
+    uint64_t low = (uint64_t)val;
+    fprintf(stderr, "%016lX%016lX", high, low); // Print to stderr for debug
+}
+
 #endif
 

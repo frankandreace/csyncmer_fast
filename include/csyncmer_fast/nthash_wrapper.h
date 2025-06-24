@@ -117,7 +117,7 @@ extern "C" inline uint64_t nthash_get_forward_hash(NtHashHandle handle){
     } catch (...) {return 0; }
 }
 
-extern "C" inline NtHash128 nthash_get_canonical_hash_128(NtHashHandle handle){
+extern "C" inline U128 nthash_get_canonical_hash_128(NtHashHandle handle){
     U128 result = 0;
     try {
         const uint64_t* hashes_ptr = get_nthash_obj(handle)->hashes();

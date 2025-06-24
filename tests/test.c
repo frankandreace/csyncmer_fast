@@ -65,6 +65,8 @@ static inline char base_to_bits(char base) {
     const char * naive_name = "NAIVE" ;
     const char * hashing_name = "HASHING" ;
     const char * nt_hashing_name = "NT_HASHING" ;
+    const char * nt_hashing_generator = "GENERATOR_NT" ;
+    const char * nt_hashing_deque = "DEQUE_NT" ;
     const char * deque_name = "DEQUE" ;
     const char * branchless_name = "BRANCHLESS" ;
     const char * syng_original_name = "SYNG ORIGINAL" ;
@@ -94,7 +96,7 @@ static inline char base_to_bits(char base) {
     }
 
     if (filePtr != NULL && first_writing) { 
-        fprintf(filePtr, "HASHING\tNT_HASHING\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tRESCAN_CA_BRANCHLESS\tRESCAN_CA\tRESCAN_CA_ITERATOR\n") ; 
+        fprintf(filePtr, "HASHING\tNT_HASHING\tNT_GENERATOR\tNT_DEQUE\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tRESCAN_CA_BRANCHLESS\tRESCAN_CA\tRESCAN_CA_ITERATOR\n") ; 
     }
 
     //benchmark speed for just hashing
@@ -104,11 +106,24 @@ static inline char base_to_bits(char base) {
     print_benchmark(hashing_name, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
+    //benchmark speed for nt hashing
     start_time = clock();
-    printf("BENCHING NTHASH\n");
     nthash_benchmark(sequence_input, sequence_input_length, K, S);
     end_time = clock();
     print_benchmark(nt_hashing_name, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+
+    //benchmark speed for closed syncmers on nt hashing
+    start_time = clock();
+    compute_closed_syncmers_generator_nthash(sequence_input, sequence_input_length, K, S);
+    end_time = clock();
+    print_benchmark(nt_hashing_generator, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+
+    start_time = clock();
+    compute_closed_syncmer_deque_nthash(sequence_input, sequence_input_length, K, S);
+    end_time = clock();
+    print_benchmark(nt_hashing_deque, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for naive

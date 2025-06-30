@@ -4,46 +4,25 @@ Header only library for fast syncmer extraction from a binary sequence
 ### CI/CD
 [![C/C++ CI](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c-cpp.yml)
 
-### How to compile
+### How to compile the speed benchmark binary
 Please do: 
 ```
-```
-
-### How to compile speed bench
-```
-make all
+make
 ```
 
 ### How to run speed bench
+Please do
 ```
 ./test.sh
 ```
-In the benchmarks folder there will be the tsv table with the speed for the 10 rounds of tests and the plots
+In the benchmarks folder there will be the tsv table with the speed for the 10 rounds of tests and 2 plots of the benchmarked speed of the different implementations.
 
-### Conda recipe for csyncmer_fast library
-```
-#!/bin/bash
-mkdir build
-cd build
-cmake -DCMAKE_INSTALL_PREFIX=$PREFIX \
-      -DCMAKE_BUILD_TYPE=Release \
-      ..
-make -j${CPU_COUNT}
-make install
-```
+### How to download 
 
-### Conda recipe for python csyncmer_fast library
-```
-#!/bin/bash
-mkdir build
-cd build
-cmake -DCMAKE_INSTALL_PREFIX=$PREFIX \
-      -DCMAKE_BUILD_TYPE=Release \
-      ..
-make -j${CPU_COUNT}
-make install
-```
 
+
+### Benchmark against current other libraries that compute closed syncmers
+Please see [the github directory of the comprehensive tests](https://github.com/frankandreace/csyncmer_fast_benchmark).
 
 ### HOW TO USE
 If you want to give a sequence (GCAAGTGACAATTCCTGAGAATAAT) in command line with k=5 and s=2, please use:

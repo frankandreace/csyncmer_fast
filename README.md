@@ -1,6 +1,9 @@
 # csyncmer_fast
 Header only library for fast syncmer extraction from a binary sequence
 
+### CI/CD
+[![C/C++ CI](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c-cpp.yml)
+
 ### How to compile
 Please do: 
 ```

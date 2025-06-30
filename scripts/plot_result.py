@@ -12,7 +12,7 @@ if __name__ == "__main__" :
 
     df = pd.read_csv(file,delimiter="\t")
 
-    all_columns = ["HASHING","NT_HASHING","NT_GENERATOR","NT_DEQUE","NAIVE","DEQUE","SYNG_ORIGINAL","RESCAN","RESCAN_CA_BRANCHLESS","RESCAN_CA","RESCAN_CA_ITERATOR"]
+    all_columns = ["HASHING","SYNG_GENERATOR","NT_HASHING","NT_GENERATOR","NT_DEQUE","NAIVE","DEQUE","SYNG_ORIGINAL","RESCAN","RESCAN_CA","RESCAN_CA_ITERATOR","RESCAN_CA_BRANCHLESS"]
 
     missing_columns = [col for col in all_columns if col not in df.columns]
     if missing_columns:
@@ -20,7 +20,9 @@ if __name__ == "__main__" :
 
     # syncmer_columns = ["NAIVE","DEQUE","SYNG_ORIGINAL","RESCAN","RESCAN_CA_BRANCHLESS","RESCAN_CA","RESCAN_CA_ITERATOR"]
 
-    syncmer_columns = ["HASHING","NT_HASHING","DEQUE","NT_DEQUE","NT_GENERATOR","RESCAN","SYNG_ORIGINAL"]
+    # syncmer_columns = ["HASHING","NT_HASHING","DEQUE","NT_DEQUE","NT_GENERATOR","RESCAN","SYNG_ORIGINAL"]
+
+    syncmer_columns = ["RESCAN","SYNG_ORIGINAL","SYNG_GENERATOR"]
 
     fig1 = plt.figure()
     boxplot1 = df.boxplot(column=all_columns ,rot=30, fontsize=10, figsize=(6,8))

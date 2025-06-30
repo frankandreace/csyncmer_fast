@@ -1,3 +1,6 @@
+#ifndef HASHING_H
+#define HASHING_H
+
 #include "csyncmer_fast/utils.h"
 
 /*---- STRUCTURES ----*/
@@ -125,3 +128,5 @@ bool seqhashNext (SeqhashIterator *si, U64 *kmer)
     else si->hash = advanceHashRC (si) ;
     return true ;
 }
+
+#endif

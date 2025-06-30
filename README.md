@@ -1,11 +1,46 @@
 # csyncmer_fast
 Header only library for fast syncmer extraction from a binary sequence
 
-### How to compile
+### How to compile tests
 Please do: 
 ```
-gcc -march=native -O3 -o test test.c
 ```
+
+### How to compile speed bench
+```
+make all
+```
+
+### How to run speed bench
+```
+./test.sh
+```
+In the benchmarks folder there will be the tsv table with the speed for the 10 rounds of tests and the plots
+
+### Conda recipe for csyncmer_fast library
+```
+#!/bin/bash
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=$PREFIX \
+      -DCMAKE_BUILD_TYPE=Release \
+      ..
+make -j${CPU_COUNT}
+make install
+```
+
+### Conda recipe for python csyncmer_fast library
+```
+#!/bin/bash
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=$PREFIX \
+      -DCMAKE_BUILD_TYPE=Release \
+      ..
+make -j${CPU_COUNT}
+make install
+```
+
 
 ### HOW TO USE
 If you want to give a sequence (GCAAGTGACAATTCCTGAGAATAAT) in command line with k=5 and s=2, please use:
@@ -67,10 +102,9 @@ https://github.com/richarddurbin/syng/
 ### TO DO LIST:
 
 - [ ] Add unit tests for rescan
-- [ ] Write nextflow pipeline for benchmark
-- [ ] Add simd_minimizer benchmark
-- [ ] Add 
-- [ ] Restructure folder as benchmarking folder
+- [x] Write nextflow pipeline for benchmark
+- [x] Add simd_minimizer benchmark 
+- [x] Restructure folder as benchmarking folder
 - [ ] Integrate Prof Sadakane AVX hashing
 - [ ] Integrate Prof Sadakane AVX syncmer computation
 - [x] Rescan function implementation

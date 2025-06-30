@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "csyncmer_fast/implementations.h"
+#include "implementations.h"
 #include "benchmarking.h"
 #include "fasta_reader.h"
 
@@ -27,7 +27,7 @@ static inline char base_to_bits(char base) {
     FILE *seqFile;
     seqFile = fopen(fasta_filename,"r");
     stream *seqStream = stream_open_fasta(seqFile) ;
-    const char *sequence_input = read_sequence(seqStream) ;
+    char *sequence_input = read_sequence(seqStream) ;
     size_t sequence_input_length = strlen(sequence_input) ;
 
     printf("SEQ SIZE IS %ld\n", sequence_input_length) ;
@@ -66,6 +66,7 @@ static inline char base_to_bits(char base) {
     const char * hashing_name = "HASHING" ;
     const char * nt_hashing_name = "NT_HASHING" ;
     const char * nt_hashing_generator = "GENERATOR_NT" ;
+    const char * syng_hashing_generator = "GENERATOR_SYNG" ;
     const char * nt_hashing_deque = "DEQUE_NT" ;
     const char * deque_name = "DEQUE" ;
     const char * branchless_name = "BRANCHLESS" ;
@@ -96,7 +97,7 @@ static inline char base_to_bits(char base) {
     }
 
     if (filePtr != NULL && first_writing) { 
-        fprintf(filePtr, "HASHING\tNT_HASHING\tNT_GENERATOR\tNT_DEQUE\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tRESCAN_CA_BRANCHLESS\tRESCAN_CA\tRESCAN_CA_ITERATOR\n") ; 
+        fprintf(filePtr, "HASHING\tNT_HASHING\tNT_GENERATOR\tNT_DEQUE\tNAIVE\tDEQUE\tSYNG_ORIGINAL\tRESCAN\tSYNG_GENERATOR\tRESCAN_CA_BRANCHLESS\tRESCAN_CA\tRESCAN_CA_ITERATOR\n") ; 
     }
 
     //benchmark speed for just hashing
@@ -108,14 +109,14 @@ static inline char base_to_bits(char base) {
 
     //benchmark speed for nt hashing
     start_time = clock();
-    nthash_benchmark(sequence_input, sequence_input_length, K, S);
+    nthash_benchmark(sequence_input, S);
     end_time = clock();
     print_benchmark(nt_hashing_name, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for closed syncmers on nt hashing
     start_time = clock();
-    compute_closed_syncmers_generator_nthash(sequence_input, sequence_input_length, K, S);
+    compute_closed_syncmers_generator_nthash(sequence_input, K, S);
     end_time = clock();
     print_benchmark(nt_hashing_generator, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
@@ -152,6 +153,12 @@ static inline char base_to_bits(char base) {
     compute_closed_syncmers_rescan(encoded_seq, sequence_input_length, K, S, &num_syncmer_rescan) ;
     end_time = clock();
     print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr) ;
+    if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
+
+    start_time = clock();
+    compute_closed_syncmers_generator_syng(encoded_seq, sequence_input_length, K, S);
+    end_time = clock();
+    print_benchmark(syng_hashing_generator, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for branchless rescan

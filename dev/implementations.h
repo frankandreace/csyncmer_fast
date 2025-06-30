@@ -1,8 +1,9 @@
 // #include "circular_array.h"
 // #include "hashing.h"
 #include "csyncmer_fast_iterator.h"
-#include "nthash_wrapper.h"
-#include "generator.h"
+#include "csyncmer_fast/nthash_wrapper.h"
+#include "csyncmer_fast/iterator.h"
+#include "csyncmer_fast/iterator_syng.h"
 
 typedef struct
 {
@@ -342,7 +343,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
     size_t current_position = 0;
 
     U64 minimum = U64MAX;
-    size_t minimum_position;
+    size_t minimum_position = 0;
     size_t absolute_kmer_position = 0;
 
     bool first_loop = true ;
@@ -512,7 +513,7 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
 // } 
 
 
-void nthash_benchmark(const char *sequence_input, size_t length, size_t K, size_t S){
+void nthash_benchmark(const char *sequence_input, size_t S){
     // initialize the nthash object
     NtHashHandle rolling_hash = nthash_create(sequence_input,strlen(sequence_input), S, 2);
     // --- CRITICAL CHECK: Did nthash_create succeed? ---
@@ -522,12 +523,12 @@ void nthash_benchmark(const char *sequence_input, size_t length, size_t K, size_
     }
 
     // loop over the s-mer hashes
-    __uint128_t current_hash;
+    // __uint128_t current_hash;
     size_t count = 0;
     // int roll_result = 1;
 
     while(nthash_roll(rolling_hash)){
-        current_hash = nthash_get_canonical_hash_128(rolling_hash);
+        nthash_get_canonical_hash_128(rolling_hash);
     //     // print_uint128_hex_debug(current_hash);
         count++;
 
@@ -538,13 +539,28 @@ void nthash_benchmark(const char *sequence_input, size_t length, size_t K, size_
     return;
 }
 
-void compute_closed_syncmers_generator_nthash(const char *sequence_input, size_t length, size_t K, size_t S){
+void compute_closed_syncmers_generator_syng(char *sequence_input, size_t seq_input_length, size_t K, size_t S){
     
     size_t num_syncmer = 0;
-    Syncmer128 my_syncmer = {0};
+    Syncmer64 my_syncmer = {0,0,0};
 
     printf("BUILDING GENERATOR.\n");
-    SyncmerIterator *my_syncmer_iterator = syncmer_generator_create(sequence_input, length, K, S);
+    SyncmerIteratorS *my_syncmer_iterator = syncmer_generator_createS(sequence_input, seq_input_length, K, S);
+    printf("ITERATING.\n");
+    while(syncmer_iterator_nextS(my_syncmer_iterator, &my_syncmer)){
+        num_syncmer++;
+    }
+    printf("[SYNG_HASH_SYNCMER_GENERATOR]:: COMPUTED %lu CLOSED SYNCMERS\n", num_syncmer);
+    syncmer_generator_destroyS(my_syncmer_iterator);
+}
+
+void compute_closed_syncmers_generator_nthash(const char *sequence_input, size_t K, size_t S){
+    
+    size_t num_syncmer = 0;
+    Syncmer128 my_syncmer = {0,0,0};
+
+    printf("BUILDING GENERATOR.\n");
+    SyncmerIterator *my_syncmer_iterator = syncmer_generator_create(sequence_input, K, S);
     printf("ITERATING.\n");
     while(syncmer_iterator_next(my_syncmer_iterator, &my_syncmer)){
         num_syncmer++;
@@ -566,7 +582,7 @@ void compute_closed_syncmer_deque_nthash(const char *sequence_input, size_t leng
     size_t computed_syncmers = 0;
 
 
-    U128 *s_mer_hashes = (U128 *)malloc(sizeof(U128) * num_s_mers) ;
+    U128 *s_mer_hashes = (U128 *)malloc(sizeof(U128) * num_s_mers);
     for (size_t i = 0; i < num_s_mers; i++){
         nthash_roll(rolling_hash);
         s_mer_hashes[i] = nthash_get_canonical_hash_128(rolling_hash);

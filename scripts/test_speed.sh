@@ -60,9 +60,22 @@ fi
 echo "RUNNING SPEED TEST"
 # echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
 ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+# -e cpu-cycles,instructions,cache-references,cache-misses
+# perf record -F 99 -a -g --call-graph dwarf,65528 --mmap-pages 1024 -- ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+
+# perf script > ../script_report.perf
+# perf report > ../report.perf
+
+# ../../FlameGraph/stackcollapse-perf.pl ../script_report.perf --all > ../report.collapsed
+# ../../FlameGraph/flamegraph.pl --color=java --hash ../report.collapsed > ../report.svg
+# firefox ../report.svg
+# valgrind --tool=massif ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+# valgrind --tool=cachegrind ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
 
 if [ "$SMT_STATUS" = "on" ]; then
     echo "Re-enabling HYPERTREADING."
     echo "[Executing] sudo sh -c 'echo on > /sys/devices/system/cpu/smt/control'"
     sudo sh -c 'echo on > /sys/devices/system/cpu/smt/control'
 fi
+
+# perf report > ../perf_report.txt

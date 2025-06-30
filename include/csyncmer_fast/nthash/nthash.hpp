@@ -1,5 +1,5 @@
 #pragma once
-
+#include <iostream>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -76,7 +76,6 @@ public:
          typedefs::NUM_HASHES_TYPE num_hashes,
          typedefs::K_TYPE k,
          size_t pos = 0);
-
   /**
    * Construct an ntHash object for k-mers.
    * @param seq Sequence string
@@ -192,6 +191,8 @@ public:
    * @return Reverse-complement hash value
    */
   uint64_t get_reverse_hash() const { return rev_hash; }
+
+  uint64_t get_seq_size() const { return seq.size(); }
 
 private:
   std::string_view seq;

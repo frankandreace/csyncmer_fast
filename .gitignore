@@ -3,3 +3,4 @@ benchmark/
 build/
 data/
 examples/
+*.svg

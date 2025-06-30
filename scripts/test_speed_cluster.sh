@@ -4,7 +4,7 @@ set -e
 
 
 # Default values
-DEFAULT_FILE="data/chr19_bit.fa"
+DEFAULT_FILE="data/chr1.fa" #9_bit
 DEFAULT_KMER_SIZE=31
 DEFAULT_SMER_SIZE=11
 DEFAULT_MODE=1

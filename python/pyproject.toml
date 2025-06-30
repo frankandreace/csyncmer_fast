@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "pybind11"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "csyncmer_fast"
+version = "0.1.0"
+description = "Fast syncmer generation using nthash on single thread."
+requires-python = ">=3.6"
+dependencies = []
+
+[tool.setuptools]
+packages = ["csyncmer_fast"]
+
+[tool.setuptools.package-data]
+csyncmer_fast = ["include/**/*.h", "include/**/*.hpp"]

@@ -11,7 +11,7 @@
 
 // 20,480 U128 elements = 320KB
 // 4 elements per 64B cache line = 5,120 cache lines
-#define ARRAY_UINT128_SIZE (20480)
+#define ARRAY_UINT128_SIZE (20480) //20480
 
 // 5,120 Syncmer128 structs = 160KB  
 // 2 syncmers per 64B cache line = 2,560 cache lines
@@ -48,27 +48,48 @@ typedef struct SyncmerIterator
     size_t cache_capacity; // size of the cache
     size_t cache_count; // number of syncmers inserted in cache
     size_t cache_index; // pointer to the current cached syncmer
+    
+    // size_t rescan_count;
+    // size_t tot_kmers;
+    size_t cache_full;
+    // size_t num_rolls;
+    // size_t seq_length;
 
     bool is_done; // finish generation if no more s-mers
 
 } SyncmerIterator;
 
-SyncmerIterator* syncmer_generator_create(const char *sequence_input, const size_t sequence_length, const size_t K, const size_t S){
-    
+SyncmerIterator* syncmer_generator_create(const char *sequence_input, const size_t K, const size_t S){
+
+    const size_t sequence_length = strlen(sequence_input);
+    if (K <= S){
+        fprintf(stderr, "K-MER SIZE < S-MER SIZE. EXIT.\n");
+        return NULL;
+    }
     // ADRESSING CASE SEQUENCE < K
     if (sequence_length < K){
-        fprintf(stderr, "SEQUENCE < KMER SIZE. EXIT.\n");
+        fprintf(stderr, "SEQUENCE < K-MER SIZE. EXIT.\n");
+        return NULL;
+    }
+
+    if (S <=2 ){
+        fprintf(stderr, "S-MER SIZE HAS TO BE > 2.\n");
         return NULL;
     }
 
     SyncmerIterator* si = (SyncmerIterator *)calloc(1,(sizeof(SyncmerIterator)));
-    
+    if (!si) {
+        fprintf(stderr, "Failed to allocate SyncmerIterator structure.\n");
+        return NULL;
+    }
+
     // BUILDING HASHING OBJECT
-    si->rolling_hash = nthash_create(sequence_input,strlen(sequence_input), S, NTHASH_FLAG_U128);
-    
+    si->rolling_hash = nthash_create(sequence_input, sequence_length, S, NTHASH_FLAG_U128);
+
     // AND VERIFYING IT IS CONSTRUCTED CORRECTLY
     if (si->rolling_hash == NULL){
         fprintf(stderr, "[NT_HASH_BENCH_ERROR]:: Failed to initialize NtHash object. Check sequence/S-mer size. Aborting.\n");
+        free(si);
         return NULL;
     }
 
@@ -79,11 +100,18 @@ SyncmerIterator* syncmer_generator_create(const char *sequence_input, const size
     si->is_done = false;
     si->start_fill = si->window_size - 1;
     si->kmer_position = 0;
+    // si->rescan_count = 0;
+    // si->tot_kmers = sequence_length - K + 1;
+    // si->cache_full = 0;
+    // si->num_rolls = 0;
+    // si->seq_length = sequence_length - S + 1;
 
     // Allocating memory for hash vector
     si->hash_buffer = (U128 *)aligned_alloc(64, si->buffer_size * sizeof(U128));
     if (!si->hash_buffer) {
         fprintf(stderr, "Could not allocate the hash buffer.\n");
+        nthash_destroy(si->rolling_hash);
+        free(si);
         return NULL;
     }
 
@@ -91,14 +119,19 @@ SyncmerIterator* syncmer_generator_create(const char *sequence_input, const size
     si->cached_syncmer = (Syncmer128 *)aligned_alloc(64, si->cache_capacity * sizeof(Syncmer128));
     if (!si->cached_syncmer) {
         fprintf(stderr, "Could not allocate the cache of syncmer\n");
+        nthash_destroy(si->rolling_hash);
+        free(si->hash_buffer);
+        free(si);
         return NULL;
     }
 
     // Fill 1st window_size -1 elements in the vector
     for(size_t buffer_position = 0; buffer_position < si->window_size - 1; buffer_position++){
         nthash_roll(si->rolling_hash);
+        // si->num_rolls++;
         si->hash_buffer[buffer_position] = nthash_get_canonical_hash_128(si->rolling_hash);
     }
+    si->smers_remaining -= si->window_size - 1;
 
     return si;
 
@@ -125,12 +158,15 @@ static void process_chunk_and_cache(SyncmerIterator *si){
 
     size_t buffer_position = si->start_fill;
     size_t end_positon = (si->buffer_size <= si->smers_remaining + si->start_fill) ? si->buffer_size: si->smers_remaining + si->start_fill;
+    // printf("Remaning s-mers to compute: %lu. Num tot s-mers - num_rolls: %lu\n", si->smers_remaining, (si->seq_length - si->num_rolls));
     si->smers_remaining -= end_positon - si->start_fill;
+    // printf("Remaning s-mers to compute: %lu. Num tot s-mers - num_rolls: %lu\n",si->smers_remaining, (si->seq_length - si->num_rolls));
 
 
     // Hashing new s-mers till either the end of the vector or the last s-mer in the sequence.
     while(buffer_position < end_positon){
         nthash_roll(si->rolling_hash);
+        // si->num_rolls++;
         si->hash_buffer[buffer_position] = nthash_get_canonical_hash_128(si->rolling_hash);
         buffer_position++;
     }
@@ -152,6 +188,7 @@ static void process_chunk_and_cache(SyncmerIterator *si){
 
         // rescan last w-1 elements if minimum is out of context
         if(min_hash_position < i - si->window_size + 1){
+            // si->rescan_count++;
             // the current position is i - window_size + j
             min_hash_position = i - si->window_size + 1;
             for (size_t j = 2; j <= si->window_size; j++){
@@ -180,6 +217,8 @@ static void process_chunk_and_cache(SyncmerIterator *si){
                 si->start_fill = si->buffer_size - i + si->window_size - 1;
                 // do memmove 
                 memmove(si->hash_buffer, si->hash_buffer + i - si->window_size + 1, si->start_fill * sizeof(U128));
+                si->cache_full++;
+                si->kmer_position++;
                 // return
                 return;
             }
@@ -202,9 +241,9 @@ static void process_chunk_and_cache(SyncmerIterator *si){
 
 bool syncmer_iterator_next(SyncmerIterator * si, Syncmer128 * syncmer){
     if(!si || !syncmer || si->is_done) {
-        if (!si) {printf("SI IS NONE\n");}
-        else if (!syncmer) {printf("SYNCMER IS NONE");}
-        else {printf("SI->IS_DONE IS TRUE");}
+        // if (!si) {printf("SI IS NONE\n");}
+        // else if (!syncmer) {printf("SYNCMER IS NONE");}
+        // else {printf("SI->IS_DONE IS TRUE");}
         // printf("Either SI, SYNCMER or IS_DONE ARE DONE.\n");
         return false;
     }
@@ -218,7 +257,9 @@ bool syncmer_iterator_next(SyncmerIterator * si, Syncmer128 * syncmer){
     while(si->cache_count == 0){
         // If no more s-mers, signal computation ended
         if( si->smers_remaining == 0){
-            // printf("NO MORE S-MERS TO COMPUTE\n");
+            // printf("Had to rescan %lu times out of %lu k-mers.\n", si->rescan_count, si->tot_kmers);
+            printf("Cache was full %lu times.\n", si->cache_full);
+            // printf("Num computed s-mers: %lu\n", si->num_rolls);
             si->is_done = true;
             return false;
         }

@@ -1,4 +1,4 @@
-#include "utils.h"
+#include "csyncmer_fast/utils.h"
 
 /*---- circular array structure to handle the hash value of the s-mers in a sliding window ----*/
 typedef struct {
@@ -73,18 +73,18 @@ void circularInsertBranchless(CircularArray *ca, U64 value) {
 void circularScan(CircularArray *ca){
 
     size_t scan_position ;
-    U64 current_minimum = U64MAX ;
-    size_t current_minimum_position; 
+    // U64 current_minimum = U64MAX ;
+    size_t current_minimum_position = (1 + ca->current_position) % ca->window_size; 
  
     for (size_t i = 1 ; i < ca->window_size ; i++ ) {
       scan_position = (i + ca->current_position) % ca->window_size ;
-      if ( ca->hashVector[scan_position] < current_minimum ){
-        current_minimum = ca->hashVector[scan_position] ;
+      if ( ca->hashVector[scan_position] < ca->hashVector[current_minimum_position] ){
+        // current_minimum = ca->hashVector[scan_position] ;
         current_minimum_position = scan_position;
       }
     }
 
-    ca->minimum = current_minimum ;
+    ca->minimum = ca->hashVector[current_minimum_position] ;
     ca->minimum_position = current_minimum_position ;
 }
 

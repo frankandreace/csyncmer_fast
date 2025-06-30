@@ -16,16 +16,13 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y g++ make zlib1g-dev
+        sudo apt-get install -y g++ make zlib1g-dev  meson
     - name: Build and install nthash from source
       run: |
         git clone https://github.com/bcgsc/ntHash.git
         cd ntHash
-        ./autogen.sh
-        ./configure
-        make -j$(nproc)
-        sudo make install
-        sudo ldconfig
+        meson setup --buildtype=release --prefix=PREFIX build
+        meson install -C build 
         # Verify installation
         ls -la /usr/local/lib/libnthash*
         ls -la /usr/local/include/nthash/

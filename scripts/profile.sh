@@ -1,5 +1,3 @@
-#!/bin/bash
-
 set -e 
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
@@ -40,7 +38,7 @@ SMER_SIZE="${SMER_SIZE:-$DEFAULT_SMER_SIZE}"
 MODE="${MODE:-$DEFAULT_MODE}"
 OUTFILE="../benchmark/results/benchmark.tsv"
 
-echo "TESTING SPEED"
+echo "PROFILING CODE"
 mkdir -p "../benchmark/results"
 
 echo "Setting cpu to 2.6 GHz."
@@ -57,12 +55,20 @@ else
     echo "HYPERTHREADING is already disabled (status: $SMT_STATUS)."
 fi
 
-echo "RUNNING SPEED TEST"
-echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
-../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+echo "RUNNING PERF + FLAMEGRAPH"
 
-if [ "$SMT_STATUS" = "on" ]; then
-    echo "Re-enabling HYPERTREADING."
-    echo "[Executing] sudo sh -c 'echo on > /sys/devices/system/cpu/smt/control'"
-    sudo sh -c 'echo on > /sys/devices/system/cpu/smt/control'
-fi
+perf record -F 99 -a -g ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+perf script > ../script_report.perf
+../../FlameGraph/stackcollapse-perf.pl ../script_report.perf --all > ../report.collapsed
+../../FlameGraph/flamegraph.pl --color=java --hash ../report.collapsed > ../report.svg
+
+echo "RUNNING PERF FOR CACHE MISSES"
+
+perf record -e cpu-cycles,instructions,cache-references,cache-misses -g ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+perf report > ../report.perf
+
+echo "RUNNING VALGRIND MASSIF"
+valgrind --tool=massif ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+
+echo "RUNNING VALGRIND CACHEGRIND"
+valgrind --tool=cachegrind ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE

@@ -33,7 +33,7 @@ typedef void* NtHashHandle;
  * @param hash_length 1 for 64-bit canonical, 2 for 128-bit canonical.
  * @return An opaque handle to the NtHash object, or NULL on failure.
  */
-NtHashHandle nthash_create(const char* sequence, size_t sequence_length, unsigned int k, unsigned int hash_length);
+NtHashHandle nthash_create(const char* sequence, size_t sequence_length, unsigned int k, unsigned int hash_length_flag);
 
 /**
  * @brief Rolls the hash window to the next k-mer.
@@ -41,6 +41,8 @@ NtHashHandle nthash_create(const char* sequence, size_t sequence_length, unsigne
  * @return 1 if successful (more k-mers), 0 if no more k-mers.
  */
 int nthash_roll(NtHashHandle handle);
+
+int get_seq_size(NtHashHandle handle);
 
 /**
  * @brief Gets the current forward hash (always 64-bit).
@@ -96,14 +98,20 @@ inline nthash::NtHash* get_nthash_obj(NtHashHandle handle){
 // Implementations of the C functions, using the extern "C" linkage.
 // Marked as 'inline' to suggest the compiler to inline them,
 // which is standard for header-only libraries.
-extern "C" inline NtHashHandle nthash_create(const char* sequence, size_t sequence_length, unsigned int k, unsigned int hash_length){
+extern "C" inline NtHashHandle nthash_create(const char* sequence, size_t sequence_length, unsigned int k, unsigned int hash_length_flag){
     try{
-        return new nthash::NtHash(sequence, sequence_length, hash_length, k);
+        return new nthash::NtHash(sequence, sequence_length, hash_length_flag, k);
     } catch (const std::exception& e){
         std::cerr << "CONSTRUCTION OF NTHASH FAILED MISERABLY.\n" << std::endl;
         return nullptr;
     }
 }
+
+extern "C" inline int get_seq_size(NtHashHandle handle){
+    try {
+        return get_nthash_obj(handle)->get_seq_size();
+    } catch (...) {return 0; }
+}   
 
 extern "C" inline int nthash_roll(NtHashHandle handle){
     try {
@@ -117,7 +125,7 @@ extern "C" inline uint64_t nthash_get_forward_hash(NtHashHandle handle){
     } catch (...) {return 0; }
 }
 
-extern "C" inline NtHash128 nthash_get_canonical_hash_128(NtHashHandle handle){
+extern "C" inline U128 nthash_get_canonical_hash_128(NtHashHandle handle){
     U128 result = 0;
     try {
         const uint64_t* hashes_ptr = get_nthash_obj(handle)->hashes();

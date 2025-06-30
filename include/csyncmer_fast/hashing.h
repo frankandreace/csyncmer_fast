@@ -1,4 +1,18 @@
-#include "csyncmer_fast/utils.h"
+#ifndef HASHING_H
+#define HASHING_H
+
+#include "utils.h"
+
+
+static inline char base_to_bits(char base) {
+    switch(base) {
+        case 'A': case 'a': return 0;
+        case 'C': case 'c': return 1;
+        case 'G': case 'g': return 2;
+        case 'T': case 't': return 3;
+        default: return 0; // Treat Ns and  unknown as 'A'
+    }
+  }
 
 /*---- STRUCTURES ----*/
 
@@ -34,9 +48,11 @@ static inline U64 hashRC (SeqhashIterator *si)
 static inline U64 advanceHashRC (SeqhashIterator *si)
 { Seqhash *sh = si->sh ;
   if (si->s < si->sEnd)
-    { si->h = ((si->h << 2) & sh->mask) | *si->s ;
-      si->hRC = (si->hRC >> 2) | sh->patternRC[(int)*si->s] ;
-      // printf("ADVRC. H: %llu, HRC: %llu\n", si->h, si->hRC) ;
+    { 
+      int base = base_to_bits(*si->s);
+      si->h = ((si->h << 2) & sh->mask) | base;
+      si->hRC = (si->hRC >> 2) | sh->patternRC[base] ;
+
       ++si->s ;
       return hashRC (si) ;
     }
@@ -87,8 +103,9 @@ SeqhashIterator *seqhashIterator (Seqhash *sh, char *s, int len)
         // printf("H is %llu, HRC is %llu\n", si->h, si->hRC) ;
         for (i = 0 ; i < sh->k ; ++i, ++si->s)
         { 
-          si->h = (si->h << 2) | *si->s ;
-          si->hRC = (si->hRC >> 2) | sh->patternRC[(int)*si->s] ;
+          int base = base_to_bits(*si->s);
+          si->h = (si->h << 2) | base ;
+          si->hRC = (si->hRC >> 2) | sh->patternRC[base] ;
           // printf("H is %llu, HRC is %llu, i is %d\n", si->h, si->hRC,i) ;
         }
         // U64 x = hashRC (si) ;
@@ -125,3 +142,5 @@ bool seqhashNext (SeqhashIterator *si, U64 *kmer)
     else si->hash = advanceHashRC (si) ;
     return true ;
 }
+
+#endif

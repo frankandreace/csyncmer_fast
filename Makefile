@@ -1,6 +1,8 @@
 CC = g++ 					# I use this command to specify which compiler I want to use
-CFLAGS = -march=native -O3 -Wall -Wextra -std=c++17	#-mavx2 -funroll-loops -fprefetch-loop-arrays # These are compilation flags to optimize (max: O3) for the CPU of the machine (native) 
-DEBUG_FLAGS = -DDEBUG -g 	# Debug flags
+CFLAGS = -std=c++17	# -march=native -O3 -mavx2 -funroll-loops -fprefetch-loop-arrays # These are 
+OPTIMIZE_FLAGS = -march=native -O3 -mavx2 -funroll-loops -fprefetch-loop-arrays
+#compilation flags to optimize (max: O3) for the CPU of the machine (native) 
+DEBUG_FLAGS = -DDEBUG -g -fno-omit-frame-pointer -Wall -Wextra	# Debug flags
 
 # DIRECTORIES USED
 INCLUDE_DIR = include
@@ -30,7 +32,15 @@ EXE1_OBJECTS =  ${OBJECT_DIR}/test.o \
 				${OBJECT_DIR}/seqhash.o \
 				${OBJECT_DIR}/utils_d.o
 
+
+PYTHON = python3
+PYBIND11_INC = $(shell $(PYTHON) -m pybind11 --includes)
+
+PYTHON_SOURCES = python/csyncmer_fast/_bindings.cpp 
+PYTHON_MODULE = python/csyncmer_fast/_bindings$(shell $(PYTHON)-config --extension-suffix)
+
 # DEFAULT TARGET FOR MAKE
+all: CFLAGS += ${OPTIMIZE_FLAGS}
 all : mkdir ${EXE1} # all depends from mkdir (below) and the binary ${EXE1}
 
 #Build executable from object files
@@ -56,6 +66,7 @@ mkdir:
 #Clean build artifacts
 clean:
 	rm -rf ${BUILD_DIR}
+	rm -rf ${PYTHON_MODULE}
 
 #Debug build
 deubg: CFLAGS += ${DEBUG_FLAGS}
@@ -65,4 +76,9 @@ debug: all
 test: all
 	./${EXE1}
 
-.PHONY: all clean mkdir debug test
+python: ${PYTHON_MODULE}
+${PYTHON_MODULE}: ${PYTHON_SOURCES}
+	${CC} ${CFLAGS} -I${INCLUDE_DIR} ${PYBIND11_INC} -shared -fPIC $^ -lnthash -o $@ -v
+#/usr/local/lib/libnthash.a
+
+.PHONY: all clean mkdir debug test python

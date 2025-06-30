@@ -10,13 +10,11 @@
 #define UNIT_DEFINED
 
 typedef unsigned long long U64 ;
+typedef __uint128_t U128;
 const static U64 U64MAX = 0xffffffffffffffff ;
 
-const static __uint128_t U128MAX = (__uint128_t)(-1) ;
 
-static inline int u128_lt(__uint128_t a, __uint128_t b) {
-    return __builtin_ult128(a, b);
-}
+const static __uint128_t U128MAX = (__uint128_t)(-1) ;
 
 // Helper function to print __uint128_t in hexadecimal (still needed for printf)
 void print_uint128_hex_debug(__uint128_t val) {

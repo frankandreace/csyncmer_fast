@@ -3,3 +3,6 @@ benchmark/
 build/
 data/
 examples/
+*.svg
+python/csyncmer_fast.egg-info/
+python/csyncmer_fast/__pycache__/

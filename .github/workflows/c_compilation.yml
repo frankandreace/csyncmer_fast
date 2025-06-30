@@ -21,7 +21,7 @@ jobs:
       run: |
         git clone https://github.com/bcgsc/ntHash.git
         cd ntHash
-        meson setup --buildtype=release --prefix=PREFIX build
+        meson setup --buildtype=release build
         meson install -C build 
         # Verify installation
         ls -la /usr/local/lib/libnthash*

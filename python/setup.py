@@ -31,10 +31,21 @@ ext_modules = [
               sources=['csyncmer_fast/_bindings.cpp'],
               include_dirs=[
                   pybind11.get_include(),
-                  'csyncmer_fast/include'  # Changed path
+                  '../include'  # Changed path
               ],
               language='c++',
-              extra_compile_args=['-O3', '-march=native', '-Wall', '-Wextra', '-shared', '-std=c++17', '-fPIC'],
+              extra_compile_args =  ['-O3',
+                                    '-march=native',
+                                    '-shared',
+                                    '-std=c++17',
+                                    '-fPIC',
+                                    '-ffast-math',
+                                    '-funroll-loops',
+                                    '-flto',
+                                    '-fprefetch-loop-arrays',
+                                    '-mavx2',
+                                    '-v',
+                                    ],
               libraries=['nthash'],
               library_dirs=library_dirs,
               ),

@@ -12,7 +12,7 @@
 
 // 20,480 U128 elements = 320KB
 // 4 elements per 64B cache line = 5,120 cache lines
-#define ARRAY_UINT128_SIZE (20480) //20480
+#define ARRAY_UINT128_SIZE (20480) //20480 40960
 
 // 5,120 Syncmer128 structs = 160KB  
 // 2 syncmers per 64B cache line = 2,560 cache lines

@@ -2,5 +2,5 @@
 
 from ._bindings import SyncmerIterator
 
-__version__ = "0.1.0"
 __all__ = ['SyncmerIterator']
+__version__ = "0.1.0"

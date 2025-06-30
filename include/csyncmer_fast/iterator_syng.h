@@ -170,8 +170,8 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
 
     // Hashing new s-mers till either the end of the vector or the last s-mer in the sequence.
     while(buffer_position < end_positon){
-        bool return_seqhashnext;
-        return_seqhashnext = seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position]);
+        // bool return_seqhashnext;
+        seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position]);
         // printf("RETURN SEQHASHNEXT: %s\n", return_seqhashnext?"true":"false");
         // si->hash_buffer[buffer_position] = synmcer;
         buffer_position++;

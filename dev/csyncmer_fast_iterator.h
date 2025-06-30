@@ -1,6 +1,6 @@
 #include <stddef.h>
 
-#include "hashing.h"
+#include "csyncmer_fast/hashing.h"
 #include "circular_array.h"
 
 // wrap functions to compute closed syncmers

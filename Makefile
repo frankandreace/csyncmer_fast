@@ -1,8 +1,8 @@
 CC = g++ 					# I use this command to specify which compiler I want to use
-CFLAGS = -g -Wall -Wextra -std=c++17	# -march=native -O3 -mavx2 -funroll-loops -fprefetch-loop-arrays # These are 
+CFLAGS = -std=c++17	# -march=native -O3 -mavx2 -funroll-loops -fprefetch-loop-arrays # These are 
 OPTIMIZE_FLAGS = -march=native -O3 -mavx2 -funroll-loops -fprefetch-loop-arrays
 #compilation flags to optimize (max: O3) for the CPU of the machine (native) 
-DEBUG_FLAGS = -DDEBUG -g -fno-omit-frame-pointer	# Debug flags
+DEBUG_FLAGS = -DDEBUG -g -fno-omit-frame-pointer -Wall -Wextra	# Debug flags
 
 # DIRECTORIES USED
 INCLUDE_DIR = include

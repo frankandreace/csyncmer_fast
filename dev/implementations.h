@@ -1,5 +1,5 @@
 // #include "circular_array.h"
-// #include "hashing.h"
+// #include "csyncmer_fast/hashing.h"
 #include "csyncmer_fast_iterator.h"
 #include "csyncmer_fast/nthash_wrapper.h"
 #include "csyncmer_fast/iterator.h"

@@ -35,5 +35,8 @@ jobs:
         echo "PKG_CONFIG_PATH=$HOME/./local/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_PATH
 
     - name: Build project
-      run: make
+      run: |
+        export LIBRARY_PATH=$HOME/.local/lib:$LIBRARY_PATH
+        export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
+        make
 

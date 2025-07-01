@@ -21,6 +21,7 @@ jobs:
       run: |
         git clone https://github.com/bcgsc/ntHash.git
         cd ntHash
+        sed -i '1i#include <cstdint>' /ntHash/src/internal.hpp
         meson setup --buildtype=release build
         meson install -C build 
         # Verify installation

@@ -2,7 +2,7 @@
 Header only library for fast syncmer extraction from a binary sequence
 
 ### CI/CD
-[![C/C++ CI](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c-cpp.yml)
+[![.github/workflows/c_compilation.yml](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_compilation.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_compilation.yml)
 
 ### How to compile the speed benchmark binary
 Please do: 

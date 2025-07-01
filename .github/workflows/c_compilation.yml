@@ -28,7 +28,7 @@ jobs:
         meson compile -C build
         meson install -C build 
     
-    -name: Set environment
+    - name: Set environment
       run: |
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         echo "LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH" >> $GITHUB_PATH

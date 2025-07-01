@@ -19,9 +19,9 @@ jobs:
         sudo apt-get install -y g++ make zlib1g-dev  meson
     - name: Build and install nthash from source
       run: |
-        git clone https://github.com/bcgsc/ntHash.git
+        git clone --recursive https://github.com/bcgsc/ntHash.git
         cd ntHash
-        sed -i '1i#include <cstdint>' /ntHash/src/internal.hpp
+        sed -i '2i#include <cstdint>' ./src/internal.hpp
         meson setup --buildtype=release build
         meson install -C build 
         # Verify installation

@@ -28,7 +28,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
       
     steps:
-    - uses: action/checkout@v4
+    - uses: actions/checkout@v4
     - name: Build the python package
       run: python -m build
 

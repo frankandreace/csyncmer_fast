@@ -3,8 +3,8 @@ name: Build Docker Image for build and test
 on:
   push:
     branches: [ "main" ]
-    paths:
-      - 'Dockerfile'
+    # paths:
+    #   - 'Dockerfile'
   workflow_dispatch:
 
 jobs:

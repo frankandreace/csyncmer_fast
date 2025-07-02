@@ -3,8 +3,17 @@ name: C speed benchmark build
 on:
   push:
     branches: ["main", "dev"]
+    paths:
+      - 'src/csyncmer_fast/c_lib'
+      - 'tests/c_tests'
+      - 'Makefile'
   pull_request: 
     branches: ["main", "dev"]
+    paths:
+      - 'src/csyncmer_fast/c_lib'
+      - 'tests/c_tests'
+      - 'Makefile'
+
 
 jobs:
   build:

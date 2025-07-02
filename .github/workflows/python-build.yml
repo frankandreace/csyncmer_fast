@@ -1,0 +1,24 @@
+name: python package compilation
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu:latest
+
+    container:
+      image: ghcr.io/${{ github.repository }}/build-env:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      
+    steps:
+    - uses: action/checkout@v4
+    - name: Build the python package
+      run: python -m build
+
+    

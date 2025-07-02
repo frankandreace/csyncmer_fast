@@ -1,0 +1,26 @@
+# THIS DOCKER COMPOSE IS USED TO LOCALLY TEST THE LIBRARY
+services:
+
+# Test C benchmarking compilation
+  c_speed_benchmark-build:
+    build: .
+    volumes:
+      - .:/workspace
+    command: make
+
+# Test Python compilation  
+  python-build:
+    build: .
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: python3 -m build
+
+  # Interactive shell for debugging
+  shell:
+    build: .
+    volumes:
+      - .:/workspace
+    command: /bin/bash
+    stdin_open: true
+    tty: true

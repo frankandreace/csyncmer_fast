@@ -4,5 +4,5 @@ build/
 data/
 examples/
 *.svg
-python/csyncmer_fast.egg-info/
-python/csyncmer_fast/__pycache__/
+src/csyncmer_fast.egg-info/
+dist/

@@ -1,4 +1,4 @@
-name: C tests CI
+name: compilation of C test
 
 on:
   push:

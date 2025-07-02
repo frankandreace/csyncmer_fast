@@ -13,6 +13,7 @@ on:
       - 'src/csyncmer_fast/c_lib'
       - 'tests/c_tests'
       - 'Makefile'
+  workflow_dispatch:
 
 
 jobs:

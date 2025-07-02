@@ -2,7 +2,9 @@
 Header only library for fast syncmer extraction from a binary sequence
 
 ### CI/CD
-[![.github/workflows/c_compilation.yml](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_compilation.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_compilation.yml)
+[![Build Docker Image for build and test](https://github.com/frankandreace/csyncmer_fast/actions/workflows/build-docker.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/build-docker.yml)
+[![C speed benchmark build](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml)
+[![python package compilation](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml)
 
 ### How to compile the speed benchmark binary
 Please do: 

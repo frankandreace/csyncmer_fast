@@ -133,6 +133,7 @@ SyncmerIteratorS* syncmer_generator_createS(char *sequence_input, size_t sequenc
     for(size_t buffer_position = 0; buffer_position < si->window_size - 1; buffer_position++){
         si->num_rolls++;
         seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position]);
+        // printf("RETURN SEQHASHNEXT: %llu\n", si->hash_buffer[buffer_position]);
     }
     si->smers_remaining -= si->window_size - 1;
     // printf("RETURNING ALL GOOD. (IN THEORY)\n");
@@ -172,7 +173,7 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
     while(buffer_position < end_positon){
         // bool return_seqhashnext;
         seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position]);
-        // printf("RETURN SEQHASHNEXT: %s\n", return_seqhashnext?"true":"false");
+        // printf("RETURN SEQHASHNEXT: %llu\n", si->hash_buffer[buffer_position]);
         // si->hash_buffer[buffer_position] = synmcer;
         buffer_position++;
         si->num_rolls++;
@@ -216,8 +217,9 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
             // add syncmer to the cache of syncmer
             // printf("MIN HASH POS: %lu; hash: %llu, pos: %lu\n", min_hash_position, si->hash_buffer[min_hash_position]);
             si->cached_syncmer[si->cache_count].hash_value = si->hash_buffer[min_hash_position];
-            si->cached_syncmer[si->cache_count].smer_position = si->kmer_position - (i - min_hash_position);
             si->cached_syncmer[si->cache_count].kmer_position = si->kmer_position;
+            si->cached_syncmer[si->cache_count].smer_position = si->kmer_position + si->window_size - (i - min_hash_position + 1);
+
             si->cache_count++;
 
              // IF CACHE IS FULL, MOVE THE ELEMENTS TO THE BEGINNING

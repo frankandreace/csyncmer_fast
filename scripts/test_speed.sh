@@ -59,7 +59,7 @@ fi
 
 echo "RUNNING SPEED TEST"
 echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
-../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+../build/bin/speed_benchmark $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
 
 if [ "$SMT_STATUS" = "on" ]; then
     echo "Re-enabling HYPERTREADING."

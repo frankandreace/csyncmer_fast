@@ -3,6 +3,32 @@
 
 #include "utils.h"
 
+// BASE TO BITS ARRAY
+// USING CHAR CONVERTION TO INT
+// DEFAULT IS 0
+// 65: A ; 97: a
+// 67: C ; 99: c
+// 71: G ; 103: g
+// 84: T ; 116: t
+// 85: U ; 117: u
+static const unsigned char base_to_bits_array[256] = { 0, 1, 2, 3, // first 4 elements as it is receiving the sequence already binarized
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0, // A: 65
+0,1, // C: 67
+0,0,0,2, // G: 71
+0,0,0,0,0,0,0,0,0,0,0,0,3, // T: 84
+3,
+0,0,0,0,0,0,0,0,0,0,0,0,
+0,1,
+0,0,0,2,
+0,0,0,0,0,0,0,0,0,0,0,0,3,
+3,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+};
+
 
 static inline char base_to_bits(char base) {
     switch(base) {
@@ -49,9 +75,9 @@ static inline U64 advanceHashRC (SeqhashIterator *si)
 { Seqhash *sh = si->sh ;
   if (si->s < si->sEnd)
     { 
-      int base = base_to_bits(*si->s);
-      si->h = ((si->h << 2) & sh->mask) | base;
-      si->hRC = (si->hRC >> 2) | sh->patternRC[base] ;
+      // int base = base_to_bits(*si->s);
+      si->h = ((si->h << 2) & sh->mask) | base_to_bits_array[*si->s];
+      si->hRC = (si->hRC >> 2) | sh->patternRC[base_to_bits_array[*si->s]] ;
 
       ++si->s ;
       return hashRC (si) ;
@@ -103,9 +129,9 @@ SeqhashIterator *seqhashIterator (Seqhash *sh, char *s, int len)
         // printf("H is %llu, HRC is %llu\n", si->h, si->hRC) ;
         for (i = 0 ; i < sh->k ; ++i, ++si->s)
         { 
-          int base = base_to_bits(*si->s);
-          si->h = (si->h << 2) | base ;
-          si->hRC = (si->hRC >> 2) | sh->patternRC[base] ;
+          base_to_bits_array[*si->s];
+          si->h = (si->h << 2) | base_to_bits_array[*si->s] ;
+          si->hRC = (si->hRC >> 2) | sh->patternRC[base_to_bits_array[*si->s]] ;
           // printf("H is %llu, HRC is %llu, i is %d\n", si->h, si->hRC,i) ;
         }
         // U64 x = hashRC (si) ;

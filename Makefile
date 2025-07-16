@@ -1,8 +1,8 @@
-CC = g++ 					# I use this command to specify which compiler I want to use
-CFLAGS = -std=c++17	# -march=native -O3 -mavx2 -funroll-loops -fprefetch-loop-arrays # These are 
+CC = g++ 
+CFLAGS = -std=c++17	
 OPTIMIZE_FLAGS = -march=native -O3 -mavx2 -funroll-loops -fprefetch-loop-arrays
-#compilation flags to optimize (max: O3) for the CPU of the machine (native) 
-DEBUG_FLAGS = -DDEBUG -g -fno-omit-frame-pointer -Wall -Wextra	# Debug flags
+
+DEBUG_FLAGS = -DDEBUG -g -fno-omit-frame-pointer -Wall -Wextra	
 
 # DIRECTORIES USED
 INCLUDE_DIR = src/csyncmer_fast/c_lib/include
@@ -20,7 +20,7 @@ PY_TEST_DIR = ${TESTS_DIR}/python_tests
 INCLUDES = -I${INCLUDE_DIR} -I${DEVELOP_DIR} -I${EXTERNAL_DIR}
 
 # EXTERNAL LIBRARIES TO BE INCLUDED
-C_EXTERNAL_LIBS = -lz -lnthash		# linking with zlib
+C_EXTERNAL_LIBS = -lz -lnthash		# linking with zlib for syng test
 
 # EXECUTABLES
 C_SPEED_BENCHMARK = ${BINARY_DIR}/speed_benchmark 

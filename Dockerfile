@@ -3,7 +3,7 @@ FROM python:latest
 # Preventing apt-get from asking interactive questions during install
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Installing dependencies used to compile nthash library
+# Installing dependencies used to compile nthash library and the rest
 RUN apt-get update && apt-get install -y \
     pkg-config \
     g++ \

@@ -55,8 +55,9 @@ syncmerIterator *syncmerIteratorInitialization(int K, int S, char *sequence, siz
 
     // 1 - precompute 1st window
     size_t precompute = 0 ;
+    bool current_orientation;
     while(precompute < window_size - 1){
-        bool x = seqhashNext(syncit->si, &syncit->current_smer);
+        bool x = seqhashNext(syncit->si, &syncit->current_smer, &current_orientation);
 
         if(!x){
             exit(1) ;
@@ -67,7 +68,7 @@ syncmerIterator *syncmerIteratorInitialization(int K, int S, char *sequence, siz
     }
 
     // 2 - run until end of given sequence
-    while(seqhashNext(syncit->si, &syncit->current_smer)){
+    while(seqhashNext(syncit->si, &syncit->current_smer, &current_orientation)){
 
         circularInsert(syncit->ca, syncit->current_smer);
 
@@ -95,9 +96,9 @@ bool get_next_syncmer(syncmerIterator *syncit, size_t *kmer_pos, size_t *smer_po
     if(smer) *smer = syncit->current_min_smer ;
 
     if(syncit->isDone){return false;}
-
+    bool current_orientation;
     // compute next syncmer
-    while(seqhashNext(syncit->si, &syncit->current_smer)){
+    while(seqhashNext(syncit->si, &syncit->current_smer, &current_orientation)){
 
         circularInsert(syncit->ca, syncit->current_smer);
 

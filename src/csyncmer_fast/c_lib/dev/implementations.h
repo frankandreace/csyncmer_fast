@@ -78,13 +78,14 @@ void compute_closed_syncmers_branchless(char *sequence_input, size_t length, siz
     }
 
     U64 current_smer = 0 ;
+    bool current_orientation;
     size_t current_position = 0 ;
     size_t smer_position = 0;
 
     // 1 - precompute 1st window
     size_t precompute = 0 ;
     while(precompute < window_size - 1){
-        bool x = seqhashNext(si, &current_smer);
+        bool x = seqhashNext(si, &current_smer, &current_orientation);
         // printf("x is %s, !x is %s\n",  x?"true":"false", !x?"true":"false") ;
         if(!x){
             // printf("seqhashnext is false\n") ;
@@ -97,7 +98,7 @@ void compute_closed_syncmers_branchless(char *sequence_input, size_t length, siz
     }
 
     // 2 - run until end of given sequence
-    while(seqhashNext(si, &current_smer)){
+    while(seqhashNext(si, &current_smer, &current_orientation)){
         // printf("HASHED %llu\n", current_smer) ;
         computed_smers++ ;
         circularInsertBranchless(ca, current_smer);
@@ -154,13 +155,14 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
     }
 
     U64 current_smer = 0 ;
+    bool current_orientation;
     size_t current_position = 0 ;
     size_t smer_position = 0;
 
     // 1 - precompute 1st window
     size_t precompute = 0 ;
     while(precompute < window_size - 1){
-        bool x = seqhashNext(si, &current_smer);
+        bool x = seqhashNext(si, &current_smer, &current_orientation);
         // printf("x is %s, !x is %s\n",  x?"true":"false", !x?"true":"false") ;
         if(!x){
             // printf("seqhashnext is false\n") ;
@@ -173,7 +175,7 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
     }
 
     // 2 - run until end of given sequence
-    while(seqhashNext(si, &current_smer)){
+    while(seqhashNext(si, &current_smer, &current_orientation)){
         // printf("HASHED %llu\n", current_smer) ;
         computed_smers++ ;
         circularInsert(ca, current_smer);
@@ -214,6 +216,7 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
     // printf("iterator is %s", si == NULL ? "null" : "ok") ;
 
     U64 smer;
+    bool current_orientation;
     size_t s_pos = 0;
     // bool hashnext;
 
@@ -221,7 +224,7 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
     // printf("starting hashing\n") ;
     // hashnext = seqhashNext(si, &smer) ;
     // printf ("seqhashnext is %s\n", hashnext ? "true" : "false") ;
-    while(seqhashNext(si, &smer)){
+    while(seqhashNext(si, &smer, &current_orientation)){
         // printf("HASH COMPUTED IS %llu\n", smer) ;
         s_mer_hashes[s_pos++] = smer;
         computed_smers++;
@@ -269,25 +272,23 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
 
 
 void hahsing_speed_benchmark(char *sequence_input, size_t length, size_t K, size_t S){
-    //
     U64 seed  = 7;
-    // size_t num_s_mers = length - S + 1;
-    // size_t num_k_mers = length - K + 1;
     size_t window_size = (size_t)K - (size_t)S + 1;
     size_t computed_smers = 0 ;
 
     // initialize seqhashiterator
+    // printf("INITIALIZING ITERATORS\n") ;
     Seqhash *sh = seqhashCreate(S, window_size, seed);
     SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
-    // CircularArray *ca = circularArrayCreate(si->sh->w) ;
+    // printf("INITIALIZED\n") ;
 
-    // Syncmer *sync = (Syncmer *)malloc(sizeof(Syncmer)) ;
     U64 current_smer;
-    size_t current_position;
+    bool current_orientation;
+    size_t current_position = 0;
     
     // printf("%llu\t%lu\n", current_smer, current_position) ;
-    while(seqhashNext(si, &current_smer)){
-        // printf("%llu\t%lu\n", current_smer, current_position) ;
+    while(seqhashNext(si, &current_smer, &current_orientation)){
+        // printf(">>%llu\t%lu\n", current_smer, current_position) ;
         computed_smers++;
         current_position++;
     }
@@ -325,6 +326,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
     SeqhashIterator *si = seqhashIterator(sh, sequence_input, sequence_length) ;
 
     U64 *hashvector = (U64 *)malloc(sizeof(U64) * array_size) ;
+    bool *orientationvector = (bool *)malloc(sizeof(bool) * array_size) ;
 
     // checking pointers are fine
     if (sh == NULL){
@@ -339,6 +341,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
     // syncmer computation values
 
     U64 current_smer = 0 ;
+    bool current_orientation;
 
     size_t current_position = 0;
 
@@ -351,9 +354,10 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
     // precompute first w-1 elements
     while(current_position < window_size - 1){
 
-        seqhashNext(si, &current_smer);
+        seqhashNext(si, &current_smer, &current_orientation);
         hashvector[current_position] = current_smer;
-        
+        orientationvector[current_position] = current_orientation;
+
         current_position++;
         computed_smers++;
     }
@@ -373,8 +377,9 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
         // finishing computing hashes in the vector
         while(current_position < len_scan){
 
-            seqhashNext(si, &current_smer);
+            seqhashNext(si, &current_smer, &current_orientation);
             hashvector[current_position] = current_smer;
+            orientationvector[current_position] = current_orientation;
 
             current_position++;
             computed_smers++;
@@ -416,6 +421,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
         if (num_s_mers > array_size){
             for(size_t i = 0; i < window_size - 1; i++){
                 hashvector[i] = hashvector[array_size - window_size + 1 + i] ;
+                orientationvector[i] = orientationvector[array_size - window_size + 1 + i] ;
             }
             num_s_mers = (first_loop) ? num_s_mers - len_scan: num_s_mers - len_scan + window_size - 1 ;
             len_scan = (num_s_mers + window_size - 1 < array_size) ? num_s_mers + window_size - 1 : array_size;
@@ -449,6 +455,7 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
     size_t window_size = K - S + 1 ;
 
     U64 current_smer = 0 ;
+    bool current_orientation;
     size_t computed_syncmers = 0 ;
     size_t computed_smers = 0 ;
 
@@ -458,7 +465,7 @@ void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, si
     U64 *s_mer_hashes = (U64 *)malloc(sizeof(U64) * num_s_mers) ;
 
     for(size_t s_mer_pos = 0; s_mer_pos < num_s_mers; s_mer_pos++) {
-        seqhashNext(si, &current_smer);
+        seqhashNext(si, &current_smer, &current_orientation);
         s_mer_hashes[s_mer_pos] = current_smer;
         computed_smers++;
     }
@@ -542,7 +549,7 @@ void nthash_benchmark(const char *sequence_input, size_t S){
 void compute_closed_syncmers_generator_syng(char *sequence_input, size_t seq_input_length, size_t K, size_t S){
     
     size_t num_syncmer = 0;
-    Syncmer64 my_syncmer = {0,0,0};
+    Syncmer64 my_syncmer = {0,0}; //, false, false
 
     printf("BUILDING GENERATOR.\n");
     SyncmerIteratorS *my_syncmer_iterator = syncmer_generator_createS(sequence_input, seq_input_length, K, S);
@@ -619,107 +626,3 @@ void compute_closed_syncmer_deque_nthash(const char *sequence_input, size_t leng
     free(deque);
     nthash_destroy(rolling_hash);
 }
-
-
-
-
-
-// static inline void update_minimum_branchless(U64 candidate, U64 *current_minimum, size_t candidate_position, size_t *current_minimum_position)
-// {
-//     // U64 smaller = (candidate < *current_minimum);
-//     U64 mask = -(candidate < *current_minimum);
-//     *current_minimum = (*current_minimum & ~mask) | (candidate & mask);
-//     *current_minimum_position  = (*current_minimum_position & ~mask) | (candidate_position & mask);
-// }
-
-
-// void compute_closed_syncmers_rescan_branchless(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
-//     // #define CIRCULARARRAYSIZE 27
-//     // if len < K, return
-//     if (length < K){
-//         printf("SEQUENCE SMALLER THAN K.\n") ;
-//         return ;
-//     }
-
-//     U64 seed  = 7 ;
-//     size_t num_s_mers = length - S + 1 ;
-//     size_t num_k_mers = length - K + 1 ;
-//     size_t window_size = K - S + 1 ;
-//     size_t circular_array_size = window_size;
-
-//     size_t computed_syncmers = 0 ;
-//     size_t computed_smers = 0 ;
-
-//     U64 minimum_value = U64MAX;
-
-//     // initialize 
-
-//     Seqhash *sh = seqhashCreate(S, window_size, seed) ;
-//     SeqhashIterator *si = seqhashIterator(sh, sequence_input, length) ;
-
-//     U64 *hashvector = (U64 *)malloc(sizeof(U64) * circular_array_size) ;
-
-//     if (sh == NULL){
-//         printf("sh is null.\n") ;
-//         exit (-1) ;
-//     }
-//     if (si == NULL){
-//         printf("si is null.\n") ;
-//         exit (-1) ;
-//     }
-
-//     U64 current_smer = 0 ;
-
-//     // filling first w-1 elements
-//     for (size_t precompute = 0;  precompute < window_size - 1; precompute++){
-//         seqhashNext(si, &current_smer) ;
-//         hashvector[precompute] = current_smer;
-//         computed_smers++ ;
-//     }
-
-
-//     // 2 - find syncmers
-//     size_t minimum_position = 0;
-//     size_t absolute_kmer_position = 0;
-
-//     //fiund minimum first w-1
-//     for(size_t i =0; i < window_size - 1; i++){
-//         update_minimum_branchless(hashvector[i], &minimum_value, i, &minimum_position);
-//     }
-
-//     // scan the rest
-//     size_t leftInWindow;
-//     size_t idx = window_size - 2 ; 
-//     for(size_t i = window_size - 1; i < num_s_mers; i++){
-//         idx = (idx + 1) % window_size;
-//         seqhashNext(si, &current_smer) ;
-
-//         hashvector[idx] = current_smer;
-//          // rescan if minimum out of context
-
-//         leftInWindow = i + 1 - window_size; // earliest valid pos
-
-//         if(minimum_position < leftInWindow){
-//             size_t curr_pos;
-//             minimum_value = U64MAX;
-//             for(size_t j = 1; j < window_size; j++)
-//             {
-//                 curr_pos = (i - window_size + j)%window_size;
-//                 update_minimum_branchless(hashvector[curr_pos], &minimum_value, (i - window_size + j), &minimum_position);
-//             }
-                
-//         }
-//         //verify minimum
-//         update_minimum_branchless(hashvector[idx], &minimum_value, i, &minimum_position);
-
-//         // minimum_position = get_pos(minimum_value_position);
-//         if (minimum_position == i || minimum_position == i - window_size + 1U) {
-//             computed_syncmers++;
-//         }
-
-//         absolute_kmer_position++;
-//     }
-//     free(si) ;
-
-//     *num_syncmer = computed_syncmers;
-// }

@@ -45,15 +45,15 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
 
     }
 
-    for (int i = 0; i < 20; i++){
-        printf("%c,", sequence_input[i]) ;
-    }  
-    printf("\n") ;
+    // for (int i = 0; i < 20; i++){
+    //     printf("%c,", sequence_input[i]) ;
+    // }  
+    // printf("\n") ;
 
-    for (int i = 0; i < 20; i++){
-        printf("%u,", encoded_seq[i]) ;
-    }
-    printf("\n") ;
+    // for (int i = 0; i < 20; i++){
+    //     printf("%u,", encoded_seq[i]) ;
+    // }
+    // printf("\n") ;
 
     stream_close(seqStream);
     fclose(seqFile) ;
@@ -101,6 +101,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     }
 
     //benchmark speed for just hashing
+    printf("[[HASHING SPEED BENCHMARK]]\n") ;
     start_time = clock();
     hahsing_speed_benchmark(sequence_input, sequence_input_length, K, S) ;
     end_time = clock();
@@ -108,6 +109,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for nt hashing
+    printf("[[NTHASHING SPEED BENCHMARK]]\n") ;
     start_time = clock();
     nthash_benchmark(sequence_input, S);
     end_time = clock();
@@ -115,12 +117,14 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for closed syncmers on nt hashing
+    printf("[[GENERATOR - NTHASH]]\n") ;
     start_time = clock();
     compute_closed_syncmers_generator_nthash(sequence_input, K, S);
     end_time = clock();
     print_benchmark(nt_hashing_generator, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
+    printf("[[DEQUE - NTHASH]]\n") ;
     start_time = clock();
     compute_closed_syncmer_deque_nthash(sequence_input, sequence_input_length, K, S);
     end_time = clock();
@@ -128,6 +132,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for naive
+    printf("[[NAIVE]]\n") ;
     start_time = clock();
     compute_closed_syncmers_naive(sequence_input, sequence_input_length, K, S, &num_syncmer_naive) ; //encoded_seq
     end_time = clock();
@@ -135,6 +140,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for deque
+    printf("[[DEQUE]]\n") ;
     start_time = clock();
     compute_closed_syncmers_deque_rayan(sequence_input, sequence_input_length, K, S, &num_syncmer_deque); //encoded_seq
     end_time = clock();
@@ -142,6 +148,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for syng implementation
+    printf("[[SYNG ORIGINAL]]\n") ;
     start_time = clock();
     compute_closed_syncmers_syng_original(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan) ; //encoded_seq
     end_time = clock();
@@ -149,12 +156,14 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for rescan without circular array
+    printf("[[RESCAN ITERATIVE]]\n") ;
     start_time = clock();
     compute_closed_syncmers_rescan(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan) ; //encoded_seq
     end_time = clock();
     print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr) ;
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
+    printf("[[RESCAN ITERATOR]]\n") ;
     start_time = clock();
     compute_closed_syncmers_generator_syng(sequence_input, sequence_input_length, K, S); //encoded_seq
     end_time = clock();
@@ -162,6 +171,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for branchless rescan
+    printf("[[RESCAN BRANCHLESS]]\n") ;
     start_time = clock();
     compute_closed_syncmers_branchless(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan) ; //encoded_seq
     end_time = clock();
@@ -169,6 +179,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for syncmer with rescan and ciruclar array
+    printf("[[RESCAN CIRCULAR ARRAY]]\n") ;
     start_time = clock();
     compute_closed_syncmers(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan) ; //encoded_seq
     end_time = clock();
@@ -176,6 +187,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t") ; }
 
     //benchmark speed for rescan with circular array and iterator
+    printf("[[RESCAN CIRCULAR ARRAY ITERATOR]]\n") ;
     start_time = clock();
     compute_closed_syncmers_rescan_iterator(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan_iterator) ; //encoded_seq
     end_time = clock();

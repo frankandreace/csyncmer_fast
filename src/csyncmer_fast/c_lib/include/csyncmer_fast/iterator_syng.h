@@ -10,11 +10,11 @@
  * - Free space for the rest (stack/other data) : 32KB (512 cache lines)
  */
 
-// 20,480 U128 elements = 320KB
-// 4 elements per 64B cache line = 5,120 cache lines
-#define ARRAY_UINT128_SIZE (20480) //20480 40960
+// 20,480 U64 elements = 160KB
+// 8 elements per 64B cache line = 2560 cache lines
+#define ARRAY_UINT64_SIZE (40960) //20480 40960
 
-// 5,120 Syncmer128 structs = 160KB  
+// 5,120 Syncmer64 structs = 160KB  
 // 2 syncmers per 64B cache line = 2,560 cache lines
 #define CACHE_SYNCMER_SIZE (5120)
 
@@ -30,9 +30,9 @@
 typedef struct {
     U64 hash_value;
     size_t kmer_position;
-    size_t smer_position;
+    bool smer_at_start;
+    bool is_forward;
 } Syncmer64;
-
 
 typedef struct SyncmerIteratorS
 {
@@ -43,6 +43,7 @@ typedef struct SyncmerIteratorS
     size_t kmer_position;
 
     U64 *hash_buffer; // s-mer hash buffer
+    bool *orientation_buffer; // s-mer forward or reversed orientation buffer
     size_t buffer_size; // size of hash buffer
     size_t start_fill;
 
@@ -100,7 +101,7 @@ SyncmerIteratorS* syncmer_generator_createS(char *sequence_input, size_t sequenc
         return NULL;
     }
 
-    si->buffer_size = ARRAY_UINT128_SIZE;
+    si->buffer_size = ARRAY_UINT64_SIZE;
     si->cache_capacity = CACHE_SYNCMER_SIZE;
     si->smers_remaining = sequence_length - S + 1;
     si->is_done = false;
@@ -108,13 +109,15 @@ SyncmerIteratorS* syncmer_generator_createS(char *sequence_input, size_t sequenc
     si->kmer_position = 0;
     si->num_rolls = 0;
     si->seq_length = sequence_length;
+    bool test;
 
 
     // Allocating memory for hash vector
     si->hash_buffer = (U64 *)aligned_alloc(64, si->buffer_size * sizeof(U64));
-
+    si->orientation_buffer = (bool *)aligned_alloc(8, si->buffer_size * sizeof(bool));
+    // || !si->orientation_buffer
     if (!si->hash_buffer) {
-        fprintf(stderr, "Could not allocate the hash buffer.\n");
+        fprintf(stderr, "Could not allocate the hash or orientation buffer.\n");
         free(si);
         return NULL;
     }
@@ -132,11 +135,9 @@ SyncmerIteratorS* syncmer_generator_createS(char *sequence_input, size_t sequenc
     // Fill 1st window_size -1 elements in the vector
     for(size_t buffer_position = 0; buffer_position < si->window_size - 1; buffer_position++){
         si->num_rolls++;
-        seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position]);
-        // printf("RETURN SEQHASHNEXT: %llu\n", si->hash_buffer[buffer_position]);
+        seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position], &test);
     }
     si->smers_remaining -= si->window_size - 1;
-    // printf("RETURNING ALL GOOD. (IN THEORY)\n");
     return si;
 
 }
@@ -160,19 +161,17 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
     // NORMAL CASE: K-S hashes are already inserted
     // EDGE CASE: IN THE PREVIOUS CALL, THE SYNCMER BUFFER WAS FILLED AND THERE ARE ALREADY PRE-FILLED MORE THAN K-S HASHES FRO THE PREVIOUS CALL
     // THE FIRST HASH BUFFER POSITION TO BE INSERTED IS STORED IN START_FILL
-    // U64 synmcer = U64MAX;
+
     size_t buffer_position = si->start_fill;
     size_t end_positon = (si->buffer_size <= si->smers_remaining + si->start_fill) ? si->buffer_size: si->smers_remaining + si->start_fill;
     // printf("Remaning s-mers to compute: %lu. Num tot s-mers - num_rolls: %lu\n", si->smers_remaining, (si->seq_length - si->num_rolls));
     si->smers_remaining -= end_positon - si->start_fill;
     // printf("NUM ELEMENTS TO FILL: %lu\n",end_positon - buffer_position);
     // printf("Remaning s-mers to compute: %lu. Num tot s-mers - num_rolls: %lu\n",si->smers_remaining, (si->seq_length - si->num_rolls));
-
-
     // Hashing new s-mers till either the end of the vector or the last s-mer in the sequence.
     while(buffer_position < end_positon){
         // bool return_seqhashnext;
-        seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position]);
+        seqhashNext(si->rolling_hash, &si->hash_buffer[buffer_position], &si->orientation_buffer[buffer_position]);
         // printf("RETURN SEQHASHNEXT: %llu\n", si->hash_buffer[buffer_position]);
         // si->hash_buffer[buffer_position] = synmcer;
         buffer_position++;
@@ -218,7 +217,9 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
             // printf("MIN HASH POS: %lu; hash: %llu, pos: %lu\n", min_hash_position, si->hash_buffer[min_hash_position]);
             si->cached_syncmer[si->cache_count].hash_value = si->hash_buffer[min_hash_position];
             si->cached_syncmer[si->cache_count].kmer_position = si->kmer_position;
-            si->cached_syncmer[si->cache_count].smer_position = si->kmer_position + si->window_size - (i - min_hash_position + 1);
+            // si->cached_syncmer[si->cache_count].smer_at_start = (i == min_hash_position) ? false : true;
+            // si->cached_syncmer[si->cache_count].is_forward = si->orientation_buffer[min_hash_position];
+            // si->cached_syncmer[si->cache_count].smer_position = si->kmer_position + si->window_size - (i - min_hash_position + 1);
 
             si->cache_count++;
 
@@ -228,6 +229,7 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
                 si->start_fill = si->buffer_size - i + si->window_size - 1;
                 // do memmove 
                 memmove(si->hash_buffer, si->hash_buffer + i - si->window_size + 1, si->start_fill * sizeof(U64));
+                memmove(si->orientation_buffer, si->orientation_buffer + i - si->window_size + 1, si->start_fill * sizeof(bool));
                 si->cache_full++;
                 si->kmer_position++;
                 // return
@@ -244,6 +246,8 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
     if (si->smers_remaining > 0 && end_positon >= si->window_size){
         si->start_fill = si->window_size - 1;
         memmove(si->hash_buffer, si->hash_buffer + end_positon - si->window_size + 1, si->start_fill * sizeof(U64));
+        memmove(si->orientation_buffer, si->orientation_buffer + end_positon - si->window_size + 1, si->start_fill * sizeof(bool));
+
     }
 
     // RETURN

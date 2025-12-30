@@ -949,15 +949,15 @@ static inline void update_minimum_branchless(U64 candidate, U64 *current_minimum
 }
 
 
-/*---- perform a re-scan of the entire array when the current minimum is out of context and returnt the min and position ----*/
+/*---- perform a re-scan of the entire array when the current minimum is out of context and return the min and position ----*/
 void circularScanBranchless(CircularArray *ca){
+    // Find minimum using strict < (leftmost wins ties, matching NAIVE behavior)
+    ca->minimum = U64MAX;
+    ca->minimum_position = 0;
 
-    size_t scan_position ;
-    ca->minimum = U64MAX ;
-
-    for (size_t i = 1 ; i < ca->window_size ; i++ ) {
-      scan_position = (i + ca->current_position) % ca->window_size ;
-      update_minimum_branchless(ca->hashVector[scan_position], &ca->minimum, scan_position, &ca->minimum_position) ;
+    for (size_t i = 1; i < ca->window_size; i++) {
+        size_t scan_pos = (ca->current_position + i) % ca->window_size;
+        update_minimum_branchless(ca->hashVector[scan_pos], &ca->minimum, scan_pos, &ca->minimum_position);
     }
 }
 
@@ -972,22 +972,25 @@ void circularInsertBranchless(CircularArray *ca, U64 value) {
     if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
 }
 
-/*---- perform a re-scan of the entire array when the current minimum is out of context and returnt the min and position ----*/
+/*---- perform a re-scan of the entire array when the current minimum is out of context and return the min and position ----*/
 void circularScan(CircularArray *ca){
     ca->rescan_count++;  // Track number of rescans
 
-    size_t scan_position ;
-    size_t current_minimum_position = (1 + ca->current_position) % ca->window_size;
+    // Find minimum using strict < (leftmost wins ties, matching NAIVE behavior)
+    U64 min_val = U64MAX;
+    size_t min_pos = 0;
 
-    for (size_t i = 1 ; i < ca->window_size ; i++ ) {
-      scan_position = (i + ca->current_position) % ca->window_size ;
-      if ( ca->hashVector[scan_position] < ca->hashVector[current_minimum_position] ){
-        current_minimum_position = scan_position;
-      }
+    // Scan from oldest to newest, skipping current_position (about to be overwritten)
+    for (size_t i = 1; i < ca->window_size; i++) {
+        size_t scan_pos = (ca->current_position + i) % ca->window_size;
+        if (ca->hashVector[scan_pos] < min_val) {  // < for leftmost wins
+            min_val = ca->hashVector[scan_pos];
+            min_pos = scan_pos;
+        }
     }
 
-    ca->minimum = ca->hashVector[current_minimum_position] ;
-    ca->minimum_position = current_minimum_position ;
+    ca->minimum = min_val;
+    ca->minimum_position = min_pos;
 
     // Debug: Check if we're setting up for an immediate rescan
     size_t next_pos = (ca->current_position + 1) % ca->window_size;

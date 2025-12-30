@@ -45,5 +45,5 @@ void compute_closed_syncmers_syng_original(char *sequence_input, int len, int K,
     seqhashIteratorDestroyD(si);
     seqhashDestroyD(sh);
 
-    *num_syncmers = syncmer_count;
+    *num_syncmers = count;
 }

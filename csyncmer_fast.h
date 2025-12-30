@@ -906,6 +906,8 @@ typedef struct {
     size_t window_size ; // the number of s-mers in the k-mers (K-S+1)
     U64 minimum ;
     size_t minimum_position ;
+    size_t rescan_count ; // Track number of rescans for performance debugging
+    size_t consecutive_rescan_count ; // Track rescans that will trigger immediate next rescan
     U64 hashVector[] ; // contains the hashes of the s-mers for the length of a window w
 } CircularArray ;
 
@@ -921,6 +923,8 @@ CircularArray *circularArrayCreate(size_t window_size) {
     ca->window_size = window_size ;
     ca->minimum = U64MAX;
     ca->minimum_position = window_size + 1;
+    ca->rescan_count = 0;
+    ca->consecutive_rescan_count = 0;
     return ca ;
 }
 
@@ -970,6 +974,7 @@ void circularInsertBranchless(CircularArray *ca, U64 value) {
 
 /*---- perform a re-scan of the entire array when the current minimum is out of context and returnt the min and position ----*/
 void circularScan(CircularArray *ca){
+    ca->rescan_count++;  // Track number of rescans
 
     size_t scan_position ;
     size_t current_minimum_position = (1 + ca->current_position) % ca->window_size;
@@ -983,6 +988,12 @@ void circularScan(CircularArray *ca){
 
     ca->minimum = ca->hashVector[current_minimum_position] ;
     ca->minimum_position = current_minimum_position ;
+
+    // Debug: Check if we're setting up for an immediate rescan
+    size_t next_pos = (ca->current_position + 1) % ca->window_size;
+    if (ca->minimum_position == next_pos) {
+        ca->consecutive_rescan_count++;
+    }
 }
 
 /*---- insert a new element in the circular array----*/
@@ -1287,11 +1298,13 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
         }
         current_position++ ;
     }
+    printf("[RESCAN_CIRCULAR_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ;
+    printf("[RESCAN_CIRCULAR_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
+    printf("[RESCAN_CIRCULAR_ARRAY]:: RESCANS %lu (%.2f%% of s-mers)\n", ca->rescan_count, 100.0 * ca->rescan_count / computed_smers) ;
+    printf("[RESCAN_CIRCULAR_ARRAY]:: CONSECUTIVE RESCANS %lu (%.2f%% of rescans)\n", ca->consecutive_rescan_count, 100.0 * ca->consecutive_rescan_count / ca->rescan_count) ;
     free(ca) ;
     free(sh) ;
     free(si) ;
-    printf("[RESCAN_CIRCULAR_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ;
-    printf("[RESCAN_CIRCULAR_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
     *num_syncmer = computed_syncmers;
 }
 

@@ -116,6 +116,6 @@ https://github.com/richarddurbin/syng/
 
 ### TO DO
 
-- [ ] Add unit tests for rescan
+- [x] Add unit tests for rescan
 - [ ] Integrate Prof Sadakane AVX hashing
 - [ ] Integrate Prof Sadakane AVX syncmer computation

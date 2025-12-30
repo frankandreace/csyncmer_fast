@@ -423,6 +423,70 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
 }
 
 // ============================================================================
+// HELPER FUNCTIONS FOR CORRECTNESS TESTING
+// ============================================================================
+
+size_t count_syncmer_generator_nthash(const char *sequence_input, size_t K, size_t S){
+    size_t num_syncmer = 0;
+    Syncmer128 my_syncmer = {0,0,0};
+    SyncmerIterator *my_syncmer_iterator = syncmer_generator_create(sequence_input, K, S);
+    while(syncmer_iterator_next(my_syncmer_iterator, &my_syncmer)){
+        num_syncmer++;
+    }
+    printf("[NT_HASH_SYNCMER_GENERATOR]:: COMPUTED %lu CLOSED SYNCMERS\n", num_syncmer);
+    syncmer_generator_destroy(my_syncmer_iterator);
+    return num_syncmer;
+}
+
+size_t count_syncmer_deque_nthash(const char *sequence_input, size_t length, size_t K, size_t S){
+    NtHashHandle rolling_hash = nthash_create(sequence_input, strlen(sequence_input), S, 2);
+    if (rolling_hash == NULL) {
+        fprintf(stderr, "Failed to create NtHash handle\n");
+        return 0;
+    }
+
+    size_t num_s_mers = length - S + 1;
+    size_t window_size = K - S + 1;
+    size_t computed_syncmers = 0;
+
+    U128 *s_mer_hashes = (U128 *)malloc(sizeof(U128) * num_s_mers);
+    for (size_t i = 0; i < num_s_mers; i++){
+        nthash_roll(rolling_hash);
+        s_mer_hashes[i] = nthash_get_canonical_hash_128(rolling_hash);
+    }
+
+    // Initialize deque
+    U128 *deque = (U128 *)malloc(num_s_mers * sizeof(U128));
+    U128 front = 0, back = 0;
+
+    // Use deque to find minimal s-mers in O(N)
+    for(size_t i = 0; i < num_s_mers; i++) {
+        while(back > front  && s_mer_hashes[deque[back-1]] > s_mer_hashes[i]) {
+            back--;
+        }
+        deque[back++] = i;
+        if(i >= window_size && deque[front] <= i - window_size) {
+                front++;
+        }
+        // Check for closed syncmer condition
+        if(i >= window_size - 1) {
+            size_t min_pos = deque[front];
+            size_t kmer_pos = i - window_size + 1;
+            if(min_pos == kmer_pos || min_pos == kmer_pos + K - S) {
+                computed_syncmers++;
+            }
+        }
+    }
+
+    printf("[DEQUE_NT]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers);
+
+    free(s_mer_hashes);
+    free(deque);
+    nthash_destroy(rolling_hash);
+    return computed_syncmers;
+}
+
+// ============================================================================
 // CORRECTNESS CHECK FROM SEQUENCE
 // ============================================================================
 
@@ -439,39 +503,80 @@ int compute_from_sequence(char *sequence_input, int K, int S){
         encoded_seq[i] = base_to_bits(sequence_input[i]);
     }
 
-    size_t num_syncmer_rescan;
-    size_t num_syncmer_naive;
-    size_t num_syncmer_rescan_long_array;
-    size_t num_syncmer_rescan_deque;
-    size_t num_syncmer_rescan_iterator;
+    // Seqhash-based implementations (64-bit)
+    size_t num_naive;
+    size_t num_circular_array;
+    size_t num_large_array;
+    size_t num_deque;
+    size_t num_iterator;
+    size_t num_branchless;
+    size_t num_syng_original;
 
-    compute_closed_syncmers_naive(encoded_seq, len, K, S, &num_syncmer_naive);
-    compute_closed_syncmers(encoded_seq, len, K, S, &num_syncmer_rescan);
-    compute_closed_syncmers_rescan(encoded_seq, len, K, S, &num_syncmer_rescan_long_array);
-    compute_closed_syncmers_deque_rayan(encoded_seq, len, K, S, &num_syncmer_rescan_deque);
-    compute_closed_syncmers_rescan_iterator(encoded_seq, len, K, S, &num_syncmer_rescan_iterator);
+    // ntHash-based implementations (128-bit)
+    size_t num_nt_generator;
+    size_t num_nt_deque;
+
+    printf("=== TESTING SEQHASH-BASED IMPLEMENTATIONS (64-bit) ===\n");
+    compute_closed_syncmers_naive(encoded_seq, len, K, S, &num_naive);
+    compute_closed_syncmers(encoded_seq, len, K, S, &num_circular_array);
+    compute_closed_syncmers_rescan(encoded_seq, len, K, S, &num_large_array);
+    compute_closed_syncmers_deque_rayan(encoded_seq, len, K, S, &num_deque);
+    compute_closed_syncmers_rescan_iterator(encoded_seq, len, K, S, &num_iterator);
+    compute_closed_syncmers_branchless(encoded_seq, len, K, S, &num_branchless);
+
+    // Note: SYNG_ORIGINAL uses Durbin's implementation which may compute a different
+    // variant of syncmers - excluded from correctness comparison
+    // compute_closed_syncmers_syng_original(encoded_seq, len, K, S, &num_syng_original);
+
+    printf("\n=== TESTING NTHASH-BASED IMPLEMENTATIONS (128-bit) ===\n");
+    // These need ASCII input, not encoded
+    num_nt_generator = count_syncmer_generator_nthash(sequence_input, K, S);
+    num_nt_deque = count_syncmer_deque_nthash(sequence_input, len, K, S);
 
     free(encoded_seq);
 
-    if (num_syncmer_naive != num_syncmer_rescan){
-        printf("NAIVE IS: %lu ; RESCAN IS: %lu\n", num_syncmer_naive, num_syncmer_rescan);
-        return 1;
+    // Check seqhash-based implementations agree
+    bool seqhash_ok = true;
+    if (num_naive != num_circular_array){
+        printf("[SEQHASH ERROR] NAIVE: %lu ; CIRCULAR_ARRAY: %lu\n", num_naive, num_circular_array);
+        seqhash_ok = false;
     }
-    else if (num_syncmer_naive != num_syncmer_rescan_long_array){
-        printf("NAIVE IS: %lu ; RESCAN LONG ARRAY IS: %lu\n", num_syncmer_naive, num_syncmer_rescan_long_array);
-        return 1;
+    if (num_naive != num_large_array){
+        printf("[SEQHASH ERROR] NAIVE: %lu ; LARGE_ARRAY: %lu\n", num_naive, num_large_array);
+        seqhash_ok = false;
     }
-    else if (num_syncmer_naive != num_syncmer_rescan_deque){
-        printf("NAIVE IS: %lu ; DEQUE IS: %lu\n", num_syncmer_naive, num_syncmer_rescan_deque);
-        return 1;
+    if (num_naive != num_deque){
+        printf("[SEQHASH ERROR] NAIVE: %lu ; DEQUE: %lu\n", num_naive, num_deque);
+        seqhash_ok = false;
     }
-    else if (num_syncmer_naive != num_syncmer_rescan_iterator){
-        printf("NAIVE IS: %lu ; RESCAN ITERATOR IS: %lu\n", num_syncmer_naive, num_syncmer_rescan_iterator);
-        return 1;
+    if (num_naive != num_iterator){
+        printf("[SEQHASH ERROR] NAIVE: %lu ; ITERATOR: %lu\n", num_naive, num_iterator);
+        seqhash_ok = false;
+    }
+    if (num_naive != num_branchless){
+        printf("[SEQHASH ERROR] NAIVE: %lu ; BRANCHLESS: %lu\n", num_naive, num_branchless);
+        seqhash_ok = false;
+    }
+    // SYNG_ORIGINAL excluded - uses Durbin's implementation (may compute different variant)
+
+    // Check ntHash-based implementations agree
+    bool nthash_ok = true;
+    if (num_nt_generator != num_nt_deque){
+        printf("[NTHASH ERROR] GENERATOR: %lu ; DEQUE: %lu\n", num_nt_generator, num_nt_deque);
+        nthash_ok = false;
     }
 
-    printf("[CORRECTNESS] All algorithms agree: %lu syncmers\n", num_syncmer_naive);
-    return 0;
+    // Report results
+    if (seqhash_ok && nthash_ok) {
+        printf("\n[CORRECTNESS] All seqhash implementations agree: %lu syncmers\n", num_naive);
+        printf("[CORRECTNESS] All ntHash implementations agree: %lu syncmers\n", num_nt_generator);
+        if (num_naive != num_nt_generator) {
+            printf("[NOTE] Seqhash and ntHash produce different counts (expected if using different hash functions)\n");
+        }
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 // ============================================================================

@@ -904,6 +904,8 @@ bool syncmer_iterator_next(SyncmerIterator * si, Syncmer128 * syncmer){
 typedef struct {
     size_t current_position ; // keeps track of the current position in the circula array (for window scanning purposes)
     size_t window_size ; // the number of s-mers in the k-mers (K-S+1)
+    size_t buffer_size ; // power of 2 >= window_size for fast modulo
+    size_t mask ; // buffer_size - 1, for bitwise AND instead of modulo
     U64 minimum ;
     size_t minimum_position ;
     size_t rescan_count ; // Track number of rescans for performance debugging
@@ -912,7 +914,11 @@ typedef struct {
 } CircularArray ;
 
 CircularArray *circularArrayCreate(size_t window_size) {
-    CircularArray *ca = (CircularArray *)malloc(sizeof(CircularArray) + window_size * sizeof(U64)) ;
+    // Round up to next power of 2 for fast modulo via bitmask
+    size_t buffer_size = 1;
+    while (buffer_size < window_size) buffer_size <<= 1;
+
+    CircularArray *ca = (CircularArray *)malloc(sizeof(CircularArray) + buffer_size * sizeof(U64)) ;
 
     if (ca == NULL){
         fprintf(stderr, "CANNOT INITIALIZE CIRCULAR ARRAY.") ;
@@ -921,6 +927,8 @@ CircularArray *circularArrayCreate(size_t window_size) {
 
     ca->current_position = 0 ;
     ca->window_size = window_size ;
+    ca->buffer_size = buffer_size ;
+    ca->mask = buffer_size - 1 ;  // e.g., 32 -> 31 (0x1F)
     ca->minimum = U64MAX;
     ca->minimum_position = window_size + 1;
     ca->rescan_count = 0;
@@ -955,21 +963,22 @@ void circularScanBranchless(CircularArray *ca){
     ca->minimum = U64MAX;
     ca->minimum_position = 0;
 
+    // Scan positions that will remain after expiring position is gone
     for (size_t i = 1; i < ca->window_size; i++) {
-        size_t scan_pos = (ca->current_position + i) % ca->window_size;
+        size_t scan_pos = (ca->current_position + ca->buffer_size - ca->window_size + i) & ca->mask;
         update_minimum_branchless(ca->hashVector[scan_pos], &ca->minimum, scan_pos, &ca->minimum_position);
     }
 }
 
 /*---- insert a new element in the circular array----*/
 void circularInsertBranchless(CircularArray *ca, U64 value) {
+    // Check if minimum is at the position about to expire from the window
+    size_t expiring = (ca->current_position + ca->buffer_size - ca->window_size) & ca->mask;
+    if (ca->minimum_position == expiring) { circularScanBranchless(ca) ; }
 
-    if (ca->minimum_position == ca->current_position) { circularScanBranchless(ca) ; }
-
-    ca->hashVector[ca->current_position++] = value;
-
-    update_minimum_branchless(value, &ca->minimum, ca->current_position - 1, &ca->minimum_position) ;
-    if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
+    ca->hashVector[ca->current_position] = value;
+    update_minimum_branchless(value, &ca->minimum, ca->current_position, &ca->minimum_position) ;
+    ca->current_position = (ca->current_position + 1) & ca->mask;  // Fast wrap via bitmask
 }
 
 /*---- perform a re-scan of the entire array when the current minimum is out of context and return the min and position ----*/
@@ -980,9 +989,10 @@ void circularScan(CircularArray *ca){
     U64 min_val = U64MAX;
     size_t min_pos = 0;
 
-    // Scan from oldest to newest, skipping current_position (about to be overwritten)
+    // Scan positions that will remain after expiring position is gone
+    // These are: (current_position - window_size + 1) through (current_position - 1)
     for (size_t i = 1; i < ca->window_size; i++) {
-        size_t scan_pos = (ca->current_position + i) % ca->window_size;
+        size_t scan_pos = (ca->current_position + ca->buffer_size - ca->window_size + i) & ca->mask;
         if (ca->hashVector[scan_pos] < min_val) {  // < for leftmost wins
             min_val = ca->hashVector[scan_pos];
             min_pos = scan_pos;
@@ -993,35 +1003,40 @@ void circularScan(CircularArray *ca){
     ca->minimum_position = min_pos;
 
     // Debug: Check if we're setting up for an immediate rescan
-    size_t next_pos = (ca->current_position + 1) % ca->window_size;
-    if (ca->minimum_position == next_pos) {
+    size_t next_expiring = (ca->current_position + ca->buffer_size - ca->window_size + 1) & ca->mask;
+    if (ca->minimum_position == next_expiring) {
         ca->consecutive_rescan_count++;
     }
 }
 
 /*---- insert a new element in the circular array----*/
 void circularInsert(CircularArray *ca, U64 value) {
-    // if minimum out of scope, recompute
-    if (ca->minimum_position == ca->current_position) { circularScan(ca) ; }
+    // Check if minimum is at the position about to expire from the window
+    size_t expiring = (ca->current_position + ca->buffer_size - ca->window_size) & ca->mask;
+    if (ca->minimum_position == expiring) { circularScan(ca) ; }
 
-    ca->hashVector[ca->current_position++] = value;
+    ca->hashVector[ca->current_position] = value;
     if (value < ca->minimum){
         ca->minimum = value ;
-        ca->minimum_position = ca->current_position - 1 ;
+        ca->minimum_position = ca->current_position ;
     }
-    if (ca->current_position == ca->window_size) {ca->current_position = 0;} // go back to zero if at the end of the array
+    ca->current_position = (ca->current_position + 1) & ca->mask;  // Fast wrap via bitmask
 }
 
 bool is_syncmer(CircularArray *ca, size_t *position){
-    //verify if it is at the begin or end of the window
-    if (ca->minimum_position == ca->current_position) {
+    // After insert, current_position has been incremented
+    // oldest = (current_position - window_size) & mask
+    // newest = (current_position - 1) & mask
+    size_t oldest = (ca->current_position + ca->buffer_size - ca->window_size) & ca->mask;
+    size_t newest = (ca->current_position + ca->buffer_size - 1) & ca->mask;
+
+    if (ca->minimum_position == oldest) {
         *position = 0;
-        return  true;
+        return true;
     }
-    else if (ca->minimum_position == (ca->current_position + ca->window_size - 1) % ca->window_size)
-    {
+    else if (ca->minimum_position == newest) {
         *position = ca->window_size - 1;
-        return  true;
+        return true;
     }
     return false;
 }
@@ -1387,6 +1402,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
     size_t array_size = (1 << ARRAYSIZE);
     size_t computed_syncmers = 0 ;
     size_t computed_smers = 0 ;
+    size_t rescan_count = 0 ;
 
     Seqhash *sh = seqhashCreate(S, window_size, seed) ;
     SeqhashIterator *si = seqhashIterator(sh, sequence_input, sequence_length) ;
@@ -1454,6 +1470,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
 
             // rescan last w-1 elements if minimum out of context
             if(minimum_position < i - window_size + 1){
+                rescan_count++;
                 size_t curr_pos;
                 minimum = U64MAX ;
                 for(size_t j = 1; j < window_size; j++){
@@ -1503,6 +1520,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
 
     printf("[RESCAN_LARGE_ARRAY]:: COMPUTED %lu CLOSED SYNCMERS\n", computed_syncmers) ;
     printf("[RESCAN_LARGE_ARRAY]:: HASHED %lu S-MERS\n", computed_smers) ;
+    printf("[RESCAN_LARGE_ARRAY]:: RESCANS %lu (%.2f%% of s-mers)\n", rescan_count, 100.0 * rescan_count / computed_smers) ;
     *num_syncmer = computed_syncmers;
 }
 

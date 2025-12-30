@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - 'Dockerfile'
+      - 'misc/python/Dockerfile'
   workflow_dispatch:
 
 jobs:
@@ -31,6 +31,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
+        file: misc/python/Dockerfile
         push: true
         tags: ghcr.io/${{ github.repository }}/build-env:latest
         cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/build-env:buildcache

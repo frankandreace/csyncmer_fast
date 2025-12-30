@@ -6,39 +6,68 @@ Header only library for fast syncmer extraction from a binary sequence
 
 [![C speed benchmark build](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml)
 
-[![python package compilation](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml)  
+[![python package compilation](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml)
 
-### How to compile the speed benchmark binary
-Please do: 
+### Project Structure
+
 ```
+.
+├── csyncmer_fast.h      # Main header-only C library
+└── misc/
+    ├── bench/           # C benchmark code, Makefile, compiled binary
+    ├── python/          # Python bindings, packaging, Docker
+    ├── scripts/         # Benchmark and test scripts
+    └── syng/            # Seqhash library (external dependency)
+```
+
+### How to compile the benchmark binary
+```
+cd misc/bench
 make
 ```
 
 ### How to run speed bench
-Please do
 ```
+cd misc/scripts
 ./test.sh
 ```
-In the benchmarks folder there will be the tsv table with the speed for the 10 rounds of tests and 2 plots of the benchmarked speed of the different implementations.
+Results will be in `benchmark/results/` with TSV data and plots.
 
-### How to download 
+See `misc/scripts/README.md` for documentation on all available scripts.
 
+### How to use the benchmark binary
 
+Run unit tests:
+```
+./misc/bench/benchmark test
+```
+
+Check algorithm correctness with a sequence (K=5, S=2):
+```
+./misc/bench/benchmark check GCAAGTGACAATTCCTGAGAATAAT 5 2
+```
+
+Run benchmark on a FASTA file (K=31, S=11):
+```
+./misc/bench/benchmark bench /path/to/sequence.fa 31 11 output.tsv
+```
+
+### Python bindings
+
+Build the Python package:
+```
+cd misc/python
+python -m build
+```
+
+Or using Docker:
+```
+cd misc/python
+docker-compose run python-build
+```
 
 ### Benchmark against current other libraries that compute closed syncmers
 Please see [the github directory of the comprehensive tests](https://github.com/frankandreace/csyncmer_fast_benchmark).
-
-### HOW TO USE
-If you want to give a sequence (GCAAGTGACAATTCCTGAGAATAAT) in command line with k=5 and s=2, please use:
-
-```
-./test GCAAGTGACAATTCCTGAGAATAAT 5 2 0
-```
-If want to pass a fasta file (data/chr19_bit.fa), k=31 and s=11, please use:
-
-```
-./test data/chr19_bit.fa 31 11 1
-```
 
 ### Basic information
 This library aims at providing a header only library, in C, to compute closed syncmers in a given sequence.
@@ -69,7 +98,7 @@ I am using Richard Durbin's hash function used in SYNG. Please see below for the
 
 ### Some of existing code
 
-Strobealign code: uses 64-bit smers 
+Strobealign code: uses 64-bit smers
 https://github.com/ksahlin/strobealign/blob/71866c31b578e5166c83aaf1fde79d238246490d/src/randstrobes.cpp#L57
 
 Minimap2 code: uses 64-bit smers
@@ -81,23 +110,12 @@ https://curiouscoding.nl/posts/fast-minimizers/
 Sliding window minimum algorithm explanation:
 https://github.com/keegancsmith/Sliding-Window-Minimum?tab=readme-ov-file#sliding-window-minimum-algorithm
 
-SYNG: 
+SYNG:
 https://github.com/richarddurbin/syng/
 
 
-### TO DO LIST:
+### TO DO
 
 - [ ] Add unit tests for rescan
-- [x] Write nextflow pipeline for benchmark
-- [x] Add simd_minimizer benchmark 
-- [x] Restructure folder as benchmarking folder
 - [ ] Integrate Prof Sadakane AVX hashing
 - [ ] Integrate Prof Sadakane AVX syncmer computation
-- [x] Rescan function implementation
-- [x] Unit test it
-- [x] Wrap it for time and throughput estimation
-- [x] Test on file for speed
-- [x] Add Makefile
-- [x] Rescan iterator implementation
-- [x] Run speed test on them
-- [x] Python script to plot

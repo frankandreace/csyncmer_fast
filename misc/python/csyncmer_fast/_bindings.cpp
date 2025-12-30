@@ -2,8 +2,7 @@
 #include <pybind11/numpy.h>
 #include <iostream>
 
-#include "csyncmer_fast/utils.h"
-#include "csyncmer_fast/iterator_syng.h"
+#include "../../csyncmer_fast.h"
 
 namespace py = pybind11;
 

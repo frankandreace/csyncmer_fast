@@ -1,9 +1,21 @@
+# IDE
 .vscode/
+
+# Build artifacts
+misc/bench/*.o
+misc/bench/benchmark
+misc/python/dist/
+misc/python/*.egg-info/
+misc/python/build/
+
+# Benchmark results
 benchmark/
-build/
+
+# Data files
 data/
+
+# Examples
 examples/
+
+# Generated files
 *.svg
-src/csyncmer_fast.egg-info/
-dist/
-.github/workflows/c_compilation.yml

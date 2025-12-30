@@ -4,17 +4,15 @@ on:
   push:
     branches: [ "main", "dev" ]
     paths:
-      - 'src/csyncmer_fast'
-      - 'tests/python_tests'
-      - 'setup.py'
-      - 'pyproject.toml'
+      - 'csyncmer_fast.h'
+      - 'misc/python/**'
+      - 'misc/syng/**'
   pull_request:
     branches: [ "main" ]
     paths:
-      - 'src/csyncmer_fast'
-      - 'tests/python_tests'
-      - 'setup.py'
-      - 'pyproject.toml'
+      - 'csyncmer_fast.h'
+      - 'misc/python/**'
+      - 'misc/syng/**'
   workflow_dispatch:
 
 jobs:
@@ -26,10 +24,9 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-      
+
     steps:
     - uses: actions/checkout@v4
-    - name: Build the python package
-      run: python -m build
 
-    
+    - name: Build the python package
+      run: cd misc/python && python -m build

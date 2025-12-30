@@ -1,19 +1,18 @@
 #!/bin/bash
 
-set -e 
+set -e
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
 cd "$SCRIPT_DIR"
 
 # Default values
-DEFAULT_FILE="../data/chr19_bit.fa"
+DEFAULT_FILE="../../data/chr19_bit.fa"
 DEFAULT_KMER_SIZE=31
 DEFAULT_SMER_SIZE=11
-DEFAULT_MODE=1
 
 # Parse command-line options
-while getopts "f:k:s:r:" opt; do
+while getopts "f:k:s:" opt; do
   case $opt in
     f)
       FILE="$OPTARG"
@@ -23,9 +22,6 @@ while getopts "f:k:s:r:" opt; do
       ;;
     s)
       SMER_SIZE="$OPTARG"
-      ;;
-    r)
-      MODE="$OPTARG"
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -37,11 +33,12 @@ done
 FILE="${FILE:-$DEFAULT_FILE}"
 KMER_SIZE="${KMER_SIZE:-$DEFAULT_KMER_SIZE}"
 SMER_SIZE="${SMER_SIZE:-$DEFAULT_SMER_SIZE}"
-MODE="${MODE:-$DEFAULT_MODE}"
-OUTFILE="../benchmark/results/benchmark.tsv"
+OUTFILE="../../benchmark/results/benchmark.tsv"
+
+BENCHMARK="../bench/benchmark"
 
 echo "TESTING SPEED"
-mkdir -p "../benchmark/results"
+mkdir -p "../../benchmark/results"
 
 echo "Setting cpu to 2.6 GHz."
 echo "[Executing] sudo cpupower frequency-set --governor powersave -d 2.6GHz -u 2.6GHz"
@@ -58,8 +55,8 @@ else
 fi
 
 echo "RUNNING SPEED TEST"
-echo "[Executing] ./bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE"
-../build/bin/speed_benchmark $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+echo "[Executing] $BENCHMARK bench $FILE $KMER_SIZE $SMER_SIZE $OUTFILE"
+$BENCHMARK bench $FILE $KMER_SIZE $SMER_SIZE $OUTFILE
 
 if [ "$SMT_STATUS" = "on" ]; then
     echo "Re-enabling HYPERTREADING."

@@ -1,17 +1,16 @@
-set -e 
+set -e
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
 cd "$SCRIPT_DIR"
 
 # Default values
-DEFAULT_FILE="../data/chr19_bit.fa"
+DEFAULT_FILE="../../data/chr19_bit.fa"
 DEFAULT_KMER_SIZE=31
 DEFAULT_SMER_SIZE=11
-DEFAULT_MODE=1
 
 # Parse command-line options
-while getopts "f:k:s:r:" opt; do
+while getopts "f:k:s:" opt; do
   case $opt in
     f)
       FILE="$OPTARG"
@@ -21,9 +20,6 @@ while getopts "f:k:s:r:" opt; do
       ;;
     s)
       SMER_SIZE="$OPTARG"
-      ;;
-    r)
-      MODE="$OPTARG"
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -35,11 +31,10 @@ done
 FILE="${FILE:-$DEFAULT_FILE}"
 KMER_SIZE="${KMER_SIZE:-$DEFAULT_KMER_SIZE}"
 SMER_SIZE="${SMER_SIZE:-$DEFAULT_SMER_SIZE}"
-MODE="${MODE:-$DEFAULT_MODE}"
-OUTFILE="../benchmark/results/benchmark.tsv"
+OUTFILE="../../benchmark/results/benchmark.tsv"
 
 echo "PROFILING CODE"
-mkdir -p "../benchmark/results"
+mkdir -p "../../benchmark/results"
 
 echo "Setting cpu to 2.6 GHz."
 echo "[Executing] sudo cpupower frequency-set --governor powersave -d 2.6GHz -u 2.6GHz"
@@ -55,20 +50,22 @@ else
     echo "HYPERTHREADING is already disabled (status: $SMT_STATUS)."
 fi
 
+BENCHMARK="../bench/benchmark"
+
 echo "RUNNING PERF + FLAMEGRAPH"
 
-perf record -F 99 -a -g ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
-perf script > ../script_report.perf
-../../FlameGraph/stackcollapse-perf.pl ../script_report.perf --all > ../report.collapsed
-../../FlameGraph/flamegraph.pl --color=java --hash ../report.collapsed > ../report.svg
+perf record -F 99 -a -g $BENCHMARK bench $FILE $KMER_SIZE $SMER_SIZE $OUTFILE
+perf script > ../../script_report.perf
+../../FlameGraph/stackcollapse-perf.pl ../../script_report.perf --all > ../../report.collapsed
+../../FlameGraph/flamegraph.pl --color=java --hash ../../report.collapsed > ../../report.svg
 
 echo "RUNNING PERF FOR CACHE MISSES"
 
-perf record -e cpu-cycles,instructions,cache-references,cache-misses -g ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
-perf report > ../report.perf
+perf record -e cpu-cycles,instructions,cache-references,cache-misses -g $BENCHMARK bench $FILE $KMER_SIZE $SMER_SIZE $OUTFILE
+perf report > ../../report.perf
 
 echo "RUNNING VALGRIND MASSIF"
-valgrind --tool=massif ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+valgrind --tool=massif $BENCHMARK bench $FILE $KMER_SIZE $SMER_SIZE $OUTFILE
 
 echo "RUNNING VALGRIND CACHEGRIND"
-valgrind --tool=cachegrind ../build/bin/test $FILE $KMER_SIZE $SMER_SIZE $MODE $OUTFILE
+valgrind --tool=cachegrind $BENCHMARK bench $FILE $KMER_SIZE $SMER_SIZE $OUTFILE

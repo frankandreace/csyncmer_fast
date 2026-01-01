@@ -8,9 +8,16 @@
 #include <assert.h>
 #include <sys/stat.h>
 #include <ctype.h>
+#include <vector>
+#include <array>
 
 #include "../../csyncmer_fast.h"
+#include "../older/syncmer_seqhash.h"
+#include "../older/syncmer_nthash32_variants.h"
 #include "../syng/syng_syncmers.h"
+
+using namespace csyncmer_nthash32_variants;
+using namespace csyncmer_fast_simd;
 
 // ============================================================================
 // BENCHMARKING UTILITIES
@@ -275,8 +282,23 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
 
     FILE *seqFile;
     seqFile = fopen(fasta_filename, "r");
+    if (seqFile == NULL) {
+        fprintf(stderr, "Error: Cannot open file '%s'\n", fasta_filename);
+        return 1;
+    }
     stream *seqStream = stream_open_fasta(seqFile);
+    if (seqStream == NULL) {
+        fprintf(stderr, "Error: Cannot create stream for '%s'\n", fasta_filename);
+        fclose(seqFile);
+        return 1;
+    }
     char *sequence_input = read_sequence(seqStream);
+    if (sequence_input == NULL) {
+        fprintf(stderr, "Error: Cannot read sequence from '%s'\n", fasta_filename);
+        stream_close(seqStream);
+        fclose(seqFile);
+        return 1;
+    }
     size_t sequence_input_length = strlen(sequence_input);
 
     printf("SEQ SIZE IS %ld\n", sequence_input_length);
@@ -329,7 +351,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     }
 
     if (filePtr != NULL && first_writing) {
-        fprintf(filePtr, "SYNGH_JUST_HASHING\tNTH_JUST_HASHING\tNTH_ITERATOR\tNTH_DEQUE\tSYNGH_NAIVE\tSYNGH_DEQUE\tSYNGH_DURBIN_ITERATOR\tSYNGH_RESCAN_NO_ITERATOR\tSYNGH_RESCAN_ITERATOR\tSYNGH_RESCAN_CA_BRANCHLESS\tSYNGH_RESCAN_CA\tSYNGH_RESCAN_CA_ITERATOR\n");
+        fprintf(filePtr, "SYNGH_JUST_HASHING\tNTH_JUST_HASHING\tNTH_ITERATOR\tNTH_DEQUE\tSYNGH_NAIVE\tSYNGH_DEQUE\tSYNGH_DURBIN_ITERATOR\tSYNGH_RESCAN_NO_ITERATOR\tSYNGH_RESCAN_ITERATOR\tSYNGH_RESCAN_CA_BRANCHLESS\tSYNGH_RESCAN_CA\tSYNGH_RESCAN_CA_ITERATOR\tNTH32_SCALAR\tNTH32_DIRECT\tNTH32_RESCAN\tNTH32_DEQUE\tNTH32_FUSED\n");
     }
 
     printf("[[HASHING SPEED BENCHMARK]]\n");
@@ -414,6 +436,99 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     compute_closed_syncmers_rescan_iterator(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan_iterator);
     end_time = clock();
     print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    // ntHash32 Benchmarks
+    size_t num_nthash32_syncmer;
+
+    printf("[[NTHASH32 SCALAR]]\n");
+    start_time = clock();
+    benchmark_nthash32_2bit(sequence_input, S);
+    end_time = clock();
+    print_benchmark("NTH32_SCALAR", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 DIRECT]]\n");
+    start_time = clock();
+    benchmark_nthash32_direct(sequence_input, S);
+    end_time = clock();
+    print_benchmark("NTH32_DIRECT", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 SIMD]]\n");
+    start_time = clock();
+    benchmark_nthash32_simd(sequence_input, S);
+    end_time = clock();
+    print_benchmark("NTH32_SIMD", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 DIRECT RESCAN]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_direct_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_DIRECT_RESCAN", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 2BIT RESCAN]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_2bit_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_2BIT_RESCAN", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 2BIT DEQUE]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_2bit_deque(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_2BIT_DEQUE", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 FUSED DEQUE]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_fused_deque(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_FUSED_DEQUE", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 FUSED RESCAN]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_fused_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_FUSED_RESCAN", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+#if defined(__AVX2__)
+    printf("[[NTHASH32 SIMD RESCAN]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_simd_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_SIMD_RESCAN", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+#endif
+
+    printf("[[NTHASH32 VAN HERK]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_vanherk(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_VANHERK", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[NTHASH32 RESCAN BRANCHLESS]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_fused_rescan_branchless(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_RESCAN_BF", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+#if defined(__AVX2__)
+    printf("[[NTHASH32 SIMD MULTIWINDOW]]\n");
+    start_time = clock();
+    compute_closed_syncmers_nthash32_simd_multiwindow(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_SIMD_MULTIWINDOW", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+#endif
+
     if (filePtr != NULL) { fprintf(filePtr, "\n"); }
 
     fclose(filePtr);
@@ -486,6 +601,73 @@ size_t count_syncmer_deque_nthash(const char *sequence_input, size_t length, siz
     return computed_syncmers;
 }
 
+/// Count syncmers using ntHash32 + rescan (for correctness testing)
+size_t count_nthash32_syncmers_rescan(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_2bit_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+/// Count syncmers using ntHash32 + deque (for correctness testing)
+size_t count_nthash32_syncmers_deque(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_2bit_deque(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+/// Count syncmers using ntHash32 direct ASCII lookup (for correctness testing)
+size_t count_nthash32_syncmers_direct(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_direct_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+/// Count syncmers using ntHash32 fused (for correctness testing)
+size_t count_nthash32_syncmers_fused(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_fused_deque(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+/// Count syncmers using ntHash32 fused rescan (for correctness testing)
+size_t count_nthash32_syncmers_fused_rescan(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_fused_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+#if defined(__AVX2__)
+/// Count syncmers using ntHash32 fused SIMD (for correctness testing)
+size_t count_nthash32_syncmers_fused_simd(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_simd_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+#endif
+
+/// Count syncmers using ntHash32 Van Herk (for correctness testing)
+size_t count_nthash32_syncmers_vanherk(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_vanherk(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+/// Count syncmers using ntHash32 branchless RESCAN (for correctness testing)
+size_t count_nthash32_syncmers_rescan_bf(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_fused_rescan_branchless(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+#if defined(__AVX2__)
+/// Count syncmers using 8-lane parallel SIMD (for correctness testing)
+size_t count_nthash32_syncmers_simd_parallel(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    compute_closed_syncmers_nthash32_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+#endif
+
 // ============================================================================
 // CORRECTNESS CHECK FROM SEQUENCE
 // ============================================================================
@@ -533,7 +715,57 @@ int compute_from_sequence(char *sequence_input, int K, int S){
     num_nt_generator = count_syncmer_generator_nthash(sequence_input, K, S);
     num_nt_deque = count_syncmer_deque_nthash(sequence_input, len, K, S);
 
+    printf("\n=== TESTING NTHASH32 IMPLEMENTATION (32-bit) ===\n");
+    size_t num_nthash32_2bit_rescan = count_nthash32_syncmers_rescan(sequence_input, K, S);
+    size_t num_nthash32_2bit_deque = count_nthash32_syncmers_deque(sequence_input, K, S);
+    size_t num_nthash32_direct_rescan = count_nthash32_syncmers_direct(sequence_input, K, S);
+    size_t num_nthash32_fused_deque = count_nthash32_syncmers_fused(sequence_input, K, S);
+    size_t num_nthash32_fused_rescan = count_nthash32_syncmers_fused_rescan(sequence_input, K, S);
+
     free(encoded_seq);
+
+    // Check ntHash32 implementations agree with each other
+    bool nthash32_ok = true;
+    if (num_nthash32_2bit_rescan != num_nthash32_2bit_deque) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; DEQUE: %lu\n", num_nthash32_2bit_rescan, num_nthash32_2bit_deque);
+        nthash32_ok = false;
+    }
+    if (num_nthash32_2bit_rescan != num_nthash32_direct_rescan) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; DIRECT: %lu\n", num_nthash32_2bit_rescan, num_nthash32_direct_rescan);
+        nthash32_ok = false;
+    }
+    if (num_nthash32_2bit_rescan != num_nthash32_fused_deque) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; FUSED: %lu\n", num_nthash32_2bit_rescan, num_nthash32_fused_deque);
+        nthash32_ok = false;
+    }
+    if (num_nthash32_2bit_rescan != num_nthash32_fused_rescan) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; FUSED_RESCAN: %lu\n", num_nthash32_2bit_rescan, num_nthash32_fused_rescan);
+        nthash32_ok = false;
+    }
+#if defined(__AVX2__)
+    size_t num_nthash32_simd_rescan = count_nthash32_syncmers_fused_simd(sequence_input, K, S);
+    if (num_nthash32_2bit_rescan != num_nthash32_simd_rescan) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; FUSED_SIMD: %lu\n", num_nthash32_2bit_rescan, num_nthash32_simd_rescan);
+        nthash32_ok = false;
+    }
+#endif
+    size_t num_nthash32_vanherk = count_nthash32_syncmers_vanherk(sequence_input, K, S);
+    if (num_nthash32_2bit_rescan != num_nthash32_vanherk) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; VANHERK: %lu\n", num_nthash32_2bit_rescan, num_nthash32_vanherk);
+        nthash32_ok = false;
+    }
+    size_t num_nthash32_2bit_rescan_bf = count_nthash32_syncmers_rescan_bf(sequence_input, K, S);
+    if (num_nthash32_2bit_rescan != num_nthash32_2bit_rescan_bf) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; RESCAN_BF: %lu\n", num_nthash32_2bit_rescan, num_nthash32_2bit_rescan_bf);
+        nthash32_ok = false;
+    }
+#if defined(__AVX2__)
+    size_t num_nthash32_simd_multiwindow = count_nthash32_syncmers_simd_parallel(sequence_input, K, S);
+    if (num_nthash32_2bit_rescan != num_nthash32_simd_multiwindow) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; SIMD_PARALLEL: %lu\n", num_nthash32_2bit_rescan, num_nthash32_simd_multiwindow);
+        nthash32_ok = false;
+    }
+#endif
 
     // Check seqhash-based implementations agree
     bool seqhash_ok = true;
@@ -567,11 +799,13 @@ int compute_from_sequence(char *sequence_input, int K, int S){
     }
 
     // Report results
-    if (seqhash_ok && nthash_ok) {
+    if (seqhash_ok && nthash_ok && nthash32_ok) {
         printf("\n[CORRECTNESS] All seqhash implementations agree: %lu syncmers\n", num_naive);
-        printf("[CORRECTNESS] All ntHash implementations agree: %lu syncmers\n", num_nt_generator);
+        printf("[CORRECTNESS] All ntHash 128-bit implementations agree: %lu syncmers\n", num_nt_generator);
+        printf("[CORRECTNESS] All ntHash32 implementations agree: %lu syncmers\n", num_nthash32_2bit_rescan);
+        printf("[NOTE] ntHash32 uses 32-bit hash which may differ from 128-bit ntHash counts\n");
         if (num_naive != num_nt_generator) {
-            printf("[NOTE] Seqhash and ntHash produce different counts (expected if using different hash functions)\n");
+            printf("[NOTE] Seqhash and ntHash produce different counts (expected with different hash functions)\n");
         }
         return 0;
     } else {
@@ -605,10 +839,10 @@ int main(int argc, char *argv[]) {
     }
     else if (strcmp(mode, "check") == 0) {
         if (argc < 5) {
-            fprintf(stderr, "Usage: %s check SEQUENCE K S\n", argv[0]);
+            fprintf(stderr, "Usage: %s check FASTA_FILE K S\n", argv[0]);
             return 1;
         }
-        char *sequence = argv[2];
+        char *fasta_file = argv[2];
         int K = atoi(argv[3]);
         int S = atoi(argv[4]);
 
@@ -617,7 +851,48 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        return compute_from_sequence(sequence, K, S);
+        // Read sequence from FASTA file (first 10000 bases for quick check)
+        FILE *seqFile = fopen(fasta_file, "r");
+        if (seqFile == NULL) {
+            fprintf(stderr, "Error: Cannot open file '%s'\n", fasta_file);
+            return 1;
+        }
+        stream *seqStream = stream_open_fasta(seqFile);
+        if (seqStream == NULL) {
+            fprintf(stderr, "Error: Cannot create stream for '%s'\n", fasta_file);
+            fclose(seqFile);
+            return 1;
+        }
+        char *sequence = read_sequence(seqStream);
+        if (sequence == NULL) {
+            fprintf(stderr, "Error: Cannot read sequence from '%s'\n", fasta_file);
+            stream_close(seqStream);
+            fclose(seqFile);
+            return 1;
+        }
+        stream_close(seqStream);
+        fclose(seqFile);
+
+        // Skip initial N/A regions and use 10000 bases for quick check
+        size_t total_len = strlen(sequence);
+        size_t skip = 100000;  // Skip first 100000 bases (often N's or poly-A)
+        size_t check_len = 10000;
+
+        if (total_len < skip + check_len) {
+            skip = 0;
+            check_len = total_len;
+        }
+
+        // Shift sequence pointer and truncate
+        char *check_seq = sequence + skip;
+        if (strlen(check_seq) > check_len) {
+            check_seq[check_len] = '\0';
+        }
+        printf("Checking %zu bases (starting at position %zu)\n", strlen(check_seq), skip);
+
+        int result = compute_from_sequence(check_seq, K, S);
+        free(sequence);
+        return result;
     }
     else if (strcmp(mode, "bench") == 0) {
         if (argc < 6) {

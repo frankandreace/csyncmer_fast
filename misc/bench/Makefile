@@ -6,8 +6,9 @@ DEBUG_FLAGS = -DDEBUG -g -fno-omit-frame-pointer -Wall -Wextra
 # Paths relative to this directory
 ROOT_DIR = ../..
 SYNG_DIR = ../syng
+SIMD_DIR = ../simd
 
-INCLUDES = -I${ROOT_DIR} -I. -I${SYNG_DIR}
+INCLUDES = -I${ROOT_DIR} -I. -I${SYNG_DIR} -I${SIMD_DIR}
 LIBS = -lz -lnthash
 
 # Output

@@ -1,5 +1,5 @@
 # csyncmer_fast
-Header only library for fast syncmer extraction from a binary sequence
+Header-only C++ library for fast closed syncmer extraction using ntHash32 and AVX2 SIMD.
 
 ### CI/CD
 [![Build Docker Image for build and test](https://github.com/frankandreace/csyncmer_fast/actions/workflows/build-docker.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/build-docker.yml)
@@ -12,110 +12,111 @@ Header only library for fast syncmer extraction from a binary sequence
 
 ```
 .
-├── csyncmer_fast.h      # Main header-only C library
+├── csyncmer_fast.h          # Main header: fastest ntHash32 implementations
 └── misc/
-    ├── bench/           # C benchmark code, Makefile, compiled binary
-    ├── python/          # Python bindings, packaging, Docker
-    ├── scripts/         # Benchmark and test scripts
-    └── syng/            # Seqhash library (external dependency)
+    ├── simd/                # Reusable SIMD building blocks
+    │   ├── vec.hpp          # u32x8 AVX2 wrapper with clean API
+    │   ├── nthash.hpp       # ntHash32 rolling hash implementation
+    │   ├── hash_simd.hpp    # SIMD hash utilities and gather ops
+    │   └── sliding_min.hpp  # Sliding window minimum algorithms
+    ├── older/               # Archived implementations for reference
+    │   ├── syncmer_seqhash.h           # Original 64-bit SeqHash syncmers
+    │   ├── syncmer_nthash32_variants.h # All ntHash32 algorithm variants
+    │   └── legacy_infrastructure.h     # SeqHash, CircularArray, etc.
+    ├── bench/               # Benchmark binary and Makefile
+    ├── python/              # Python bindings and packaging
+    ├── scripts/             # Benchmark and test scripts
+    └── syng/                # Seqhash library (external dependency)
 ```
 
-### How to compile the benchmark binary
-```
+### Performance (chr19, K=31, S=15)
+
+| Implementation | Speed | Notes |
+|----------------|-------|-------|
+| **SIMD_MULTIWINDOW** | ~140-175 MB/s | AVX2 8-lane parallel, fastest |
+| **FUSED_RESCAN_BF** | ~110-145 MB/s | Scalar fallback, branch-free |
+| SeqHash RESCAN | ~85-90 MB/s | Legacy 64-bit hash |
+| SeqHash DEQUE | ~47 MB/s | Legacy deque-based |
+| SeqHash NAIVE | ~42 MB/s | O(w) per k-mer baseline |
+
+### Quick Start
+
+Compile the benchmark:
+```bash
 cd misc/bench
 make
 ```
 
-### How to run speed bench
-```
-cd misc/scripts
-./test.sh
-```
-Results will be in `benchmark/results/` with TSV data and plots.
-
-See `misc/scripts/README.md` for documentation on all available scripts.
-
-### How to use the benchmark binary
-
-Run unit tests:
-```
-./misc/bench/benchmark test
+Run correctness tests:
+```bash
+./benchmark check /path/to/sequence.fasta 31 15
 ```
 
-Check algorithm correctness with a sequence (K=5, S=2):
-```
-./misc/bench/benchmark check GCAAGTGACAATTCCTGAGAATAAT 5 2
-```
-
-Run benchmark on a FASTA file (K=31, S=11):
-```
-./misc/bench/benchmark bench /path/to/sequence.fa 31 11 output.tsv
+Run performance benchmark:
+```bash
+./benchmark bench /path/to/sequence.fasta 31 15 output.tsv
 ```
 
-### Python bindings
+### API Usage
 
-Build the Python package:
+```cpp
+#include "csyncmer_fast.h"
+
+using namespace csyncmer_fast_simd;
+
+const char* seq = "ACGTACGTACGT...";
+size_t num_syncmers;
+
+// Fastest: AVX2 SIMD (falls back to scalar if <8 k-mers)
+compute_closed_syncmers_nthash32_simd_multiwindow(
+    seq, strlen(seq), K, S, &num_syncmers);
+
+// Scalar fallback with branch-free minimum updates
+compute_closed_syncmers_nthash32_fused_rescan_branchless(
+    seq, strlen(seq), K, S, &num_syncmers);
 ```
+
+### Key Implementation Details
+
+**ntHash32 Rolling Hash**: 32-bit variant of ntHash optimized for SIMD. Uses direct ASCII lookup tables to skip 2-bit encoding overhead.
+
+**SIMD Multi-Window**: Processes 8 consecutive overlapping windows in parallel using AVX2. Ring buffer with extended mirror area eliminates wrap-around branches.
+
+**RESCAN Algorithm**: O(w) amortized per k-mer. Rescans window only when minimum falls out, with branch-free conditional updates otherwise.
+
+### Closed Syncmers
+
+A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains is either at the first or last position (scanning left to right).
+
+### Python Bindings
+
+```bash
 cd misc/python
 python -m build
 ```
 
 Or using Docker:
-```
+```bash
 cd misc/python
 docker-compose run python-build
 ```
 
-### Benchmark against current other libraries that compute closed syncmers
-Please see [the github directory of the comprehensive tests](https://github.com/frankandreace/csyncmer_fast_benchmark).
+### References
 
-### Basic information
-This library aims at providing a header only library, in C, to compute closed syncmers in a given sequence.
-On my machine, using an intel i9 CPU set to 2.6 GHz and hyperthreading disabled, on one core, I get:
+- [Curiouscoding: Fast Minimizers](https://curiouscoding.nl/posts/fast-minimizers/)
+- [Sliding Window Minimum Algorithm](https://github.com/keegancsmith/Sliding-Window-Minimum)
+- [SYNG (Durbin)](https://github.com/richarddurbin/syng/)
+- [Strobealign](https://github.com/ksahlin/strobealign)
+- [Minimap2](https://github.com/lh3/minimap2)
 
-- ~460 MB/S for HASHING
-- ~90 MB/S for RE-SCAN USING A LARGE ARRAY WHERE TO STORE HASHES
-- ~85 MB/S for RE-SCAN WITH A CIRCULAR ARRAY STRUCTURE
-- ~80 MB/S for RE-SCAN ITERATOR WITH CIRCULAR ARRAY STRUCT
-- ~47 MB/S for DEQUE IMPLEMENTATION
-- ~42 MB/S for NAIVE IMPLEMENTATION
+### Comprehensive Benchmarks
 
-No significative change by using an array of length "window_size" and using a 256 MB array for the rescan computation.
+See [csyncmer_fast_benchmark](https://github.com/frankandreace/csyncmer_fast_benchmark) for comparisons against other syncmer libraries.
 
-#### Input
-At the moment I am converting ASCII of the Fasta char into the binary encoding.
-
-The library has a main interface that is composed of a function that accepts a binary sequence (A is 00, C is 01, G is 10 and T is 11) , a k-mer lenght value K and a s-mer length value S.
-
-#### Output
-The functions returns, as an iterator, the computed closed syncmers in the sequence, one after the other.
-
-### Closed Syncmers
-A k-mer is a closed filter iff the minimal LEFTMOST canonical s-mer (s < k) that it contains is either the first or the last present in the k-mer (by scanning it left to right).
-
-### Hash function
-I am using Richard Durbin's hash function used in SYNG. Please see below for the link.
-
-### Some of existing code
-
-Strobealign code: uses 64-bit smers
-https://github.com/ksahlin/strobealign/blob/71866c31b578e5166c83aaf1fde79d238246490d/src/randstrobes.cpp#L57
-
-Minimap2 code: uses 64-bit smers
-https://github.com/lh3/minimap2/blob/c2f07ff2ac8bdc5c6768e63191e614ea9012bd5d/sketch.c#L145-L192
-
-Curiouscoding blog:
-https://curiouscoding.nl/posts/fast-minimizers/
-
-Sliding window minimum algorithm explanation:
-https://github.com/keegancsmith/Sliding-Window-Minimum?tab=readme-ov-file#sliding-window-minimum-algorithm
-
-SYNG:
-https://github.com/richarddurbin/syng/
-
-
-### TO DO
+### TODO
 
 - [x] Add unit tests for rescan
-- [ ] Integrate Prof Sadakane AVX hashing
-- [ ] Integrate Prof Sadakane AVX syncmer computation
+- [x] Implement ntHash32 variants
+- [x] Add AVX2 SIMD syncmer computation
+- [ ] Pure C implementation (no C++ dependency)
+- [ ] ARM NEON support

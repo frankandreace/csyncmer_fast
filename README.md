@@ -20,9 +20,9 @@ Header-only C++ library for fast closed syncmer extraction using ntHash32 and AV
     │   ├── hash_simd.hpp    # SIMD hash utilities and gather ops
     │   └── sliding_min.hpp  # Sliding window minimum algorithms
     ├── older/               # Archived implementations for reference
-    │   ├── syncmer_seqhash.h           # Original 64-bit SeqHash syncmers
-    │   ├── syncmer_nthash32_variants.h # All ntHash32 algorithm variants
-    │   └── legacy_infrastructure.h     # SeqHash, CircularArray, etc.
+    │   ├── syncmer_seqhash.hpp           # Original 64-bit SeqHash syncmers
+    │   ├── syncmer_nthash32_variants.hpp # All ntHash32 algorithm variants
+    │   └── legacy_infrastructure.hpp     # SeqHash, CircularArray, etc.
     ├── bench/               # Benchmark binary and Makefile
     ├── python/              # Python bindings and packaging
     ├── scripts/             # Benchmark and test scripts

@@ -12,12 +12,11 @@
 #include <array>
 
 #include "../../csyncmer_fast.h"
-#include "../older/syncmer_seqhash.h"
-#include "../older/syncmer_nthash32_variants.h"
+#include "../older/syncmer_seqhash.hpp"
+#include "../older/syncmer_nthash32_variants.hpp"
 #include "../syng/syng_syncmers.h"
 
 using namespace csyncmer_nthash32_variants;
-using namespace csyncmer_fast_simd;
 
 // ============================================================================
 // BENCHMARKING UTILITIES
@@ -515,7 +514,7 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
 
     printf("[[NTHASH32 RESCAN BRANCHLESS]]\n");
     start_time = clock();
-    compute_closed_syncmers_nthash32_fused_rescan_branchless(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    csyncmer_compute_fused_rescan_branchless(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_RESCAN_BF", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
@@ -523,9 +522,28 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
 #if defined(__AVX2__)
     printf("[[NTHASH32 SIMD MULTIWINDOW]]\n");
     start_time = clock();
-    compute_closed_syncmers_nthash32_simd_multiwindow(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    csyncmer_compute_simd_multiwindow(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_SIMD_MULTIWINDOW", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+#endif
+
+    // ntHash64 benchmarks
+    size_t num_nthash64_syncmer;
+
+    printf("[[NTHASH64 RESCAN BRANCHLESS]]\n");
+    start_time = clock();
+    csyncmer_compute_fused_rescan_branchless_64(sequence_input, sequence_input_length, K, S, &num_nthash64_syncmer);
+    end_time = clock();
+    print_benchmark("NTH64_RESCAN_BF", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+#if defined(__AVX2__)
+    printf("[[NTHASH64 SIMD MULTIWINDOW]]\n");
+    start_time = clock();
+    csyncmer_compute_simd_multiwindow_64(sequence_input, sequence_input_length, K, S, &num_nthash64_syncmer);
+    end_time = clock();
+    print_benchmark("NTH64_SIMD_MULTIWINDOW", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 #endif
 
@@ -655,7 +673,7 @@ size_t count_nthash32_syncmers_vanherk(const char *sequence_input, size_t K, siz
 /// Count syncmers using ntHash32 branchless RESCAN (for correctness testing)
 size_t count_nthash32_syncmers_rescan_bf(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_fused_rescan_branchless(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_compute_fused_rescan_branchless(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 
@@ -663,7 +681,23 @@ size_t count_nthash32_syncmers_rescan_bf(const char *sequence_input, size_t K, s
 /// Count syncmers using 8-lane parallel SIMD (for correctness testing)
 size_t count_nthash32_syncmers_simd_parallel(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_compute_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+#endif
+
+/// Count syncmers using ntHash64 scalar (for correctness testing)
+size_t count_nthash64_syncmers_scalar(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    csyncmer_compute_fused_rescan_branchless_64(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
+#if defined(__AVX2__)
+/// Count syncmers using ntHash64 4-lane SIMD (for correctness testing)
+size_t count_nthash64_syncmers_simd(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    csyncmer_compute_simd_multiwindow_64(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 #endif
@@ -767,6 +801,18 @@ int compute_from_sequence(char *sequence_input, int K, int S){
     }
 #endif
 
+    // Test ntHash64 implementations
+    printf("\n=== TESTING NTHASH64 IMPLEMENTATION (64-bit) ===\n");
+    bool nthash64_ok = true;
+    size_t num_nthash64_scalar = count_nthash64_syncmers_scalar(sequence_input, K, S);
+#if defined(__AVX2__)
+    size_t num_nthash64_simd = count_nthash64_syncmers_simd(sequence_input, K, S);
+    if (num_nthash64_scalar != num_nthash64_simd) {
+        printf("[NTHASH64 ERROR] SCALAR: %lu ; SIMD: %lu\n", num_nthash64_scalar, num_nthash64_simd);
+        nthash64_ok = false;
+    }
+#endif
+
     // Check seqhash-based implementations agree
     bool seqhash_ok = true;
     if (num_naive != num_circular_array){
@@ -799,14 +845,12 @@ int compute_from_sequence(char *sequence_input, int K, int S){
     }
 
     // Report results
-    if (seqhash_ok && nthash_ok && nthash32_ok) {
+    if (seqhash_ok && nthash_ok && nthash32_ok && nthash64_ok) {
         printf("\n[CORRECTNESS] All seqhash implementations agree: %lu syncmers\n", num_naive);
         printf("[CORRECTNESS] All ntHash 128-bit implementations agree: %lu syncmers\n", num_nt_generator);
         printf("[CORRECTNESS] All ntHash32 implementations agree: %lu syncmers\n", num_nthash32_2bit_rescan);
-        printf("[NOTE] ntHash32 uses 32-bit hash which may differ from 128-bit ntHash counts\n");
-        if (num_naive != num_nt_generator) {
-            printf("[NOTE] Seqhash and ntHash produce different counts (expected with different hash functions)\n");
-        }
+        printf("[CORRECTNESS] All ntHash64 implementations agree: %lu syncmers\n", num_nthash64_scalar);
+        printf("[NOTE] Different hash sizes may produce different syncmer counts\n");
         return 0;
     } else {
         return 1;

@@ -4,7 +4,7 @@
 // Syncmer implementations using SeqHash (64-bit hash)
 // Superseded by ntHash32 implementations in csyncmer_fast.h
 
-#include "legacy_infrastructure.h"  // For SeqHash, CircularArray, etc.
+#include "legacy_infrastructure.hpp"  // For SeqHash, CircularArray, etc.
 
 // ============================================================================
 // SEQHASH-BASED SYNCMER IMPLEMENTATIONS

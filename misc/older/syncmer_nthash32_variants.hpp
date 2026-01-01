@@ -4,7 +4,7 @@
 // Redundant ntHash32 syncmer implementations and hash benchmarks
 // Superseded by _fused_rescan_branchless and _simd_multiwindow in csyncmer_fast.h
 
-#include "legacy_infrastructure.h"
+#include "legacy_infrastructure.hpp"
 #include "../simd/vec.hpp"
 #include "../simd/nthash.hpp"
 #include "../simd/hash_simd.hpp"

@@ -706,6 +706,20 @@ size_t count_nthash64_syncmers_simd(const char *sequence_input, size_t K, size_t
 }
 #endif
 
+/// Count syncmers using ntHash64 iterator (for correctness testing)
+size_t count_nthash64_syncmers_iterator(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    size_t pos;
+    CsyncmerIterator64* it = csyncmer_iterator_create_64(sequence_input, strlen(sequence_input), K, S);
+    if (!it) return 0;
+    while (csyncmer_iterator_next_64(it, &pos)) {
+        num_syncmers++;
+    }
+    csyncmer_iterator_destroy_64(it);
+    printf("[NTHASH64_ITERATOR]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
+    return num_syncmers;
+}
+
 // ============================================================================
 // CORRECTNESS CHECK FROM SEQUENCE
 // ============================================================================
@@ -816,6 +830,11 @@ int compute_from_sequence(char *sequence_input, int K, int S){
         nthash64_ok = false;
     }
 #endif
+    size_t num_nthash64_iter = count_nthash64_syncmers_iterator(sequence_input, K, S);
+    if (num_nthash64_scalar != num_nthash64_iter) {
+        printf("[NTHASH64 ERROR] SCALAR: %lu ; ITERATOR: %lu\n", num_nthash64_scalar, num_nthash64_iter);
+        nthash64_ok = false;
+    }
 
     // Check seqhash-based implementations agree
     bool seqhash_ok = true;
@@ -1021,6 +1040,19 @@ int main(int argc, char *argv[]) {
             elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
             printf("%-25s %10zu %12.2f\n", "NTH64_SIMD_MULTIWINDOW", num, file_size_mb / elapsed);
 #endif
+
+            // Iterator benchmark
+            start = clock();
+            num = 0;
+            size_t pos;
+            CsyncmerIterator64* it = csyncmer_iterator_create_64(sequence, length, K, S);
+            if (it) {
+                while (csyncmer_iterator_next_64(it, &pos)) num++;
+                csyncmer_iterator_destroy_64(it);
+            }
+            elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH64_ITERATOR", num, file_size_mb / elapsed);
+
         }
 
         free((void*)sequence);

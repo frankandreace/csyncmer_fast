@@ -351,6 +351,22 @@ static inline void csyncmer_init_ascii_hash_table_64(uint64_t table[256]) {
 }
 
 // ============================================================================
+// Shared Static Lookup Tables for 64-bit Iterator
+// ============================================================================
+
+static uint64_t CSYNCMER_F_ASCII_64[256];
+static uint8_t CSYNCMER_IDX_ASCII[256];
+static int CSYNCMER_TABLES_INITIALIZED = 0;
+
+static inline void csyncmer_ensure_tables_initialized(void) {
+    if (!CSYNCMER_TABLES_INITIALIZED) {
+        csyncmer_init_ascii_hash_table_64(CSYNCMER_F_ASCII_64);
+        csyncmer_init_ascii_to_idx(CSYNCMER_IDX_ASCII);
+        CSYNCMER_TABLES_INITIALIZED = 1;
+    }
+}
+
+// ============================================================================
 // 64-bit Scalar Implementation
 // ============================================================================
 
@@ -458,6 +474,201 @@ static inline size_t csyncmer_compute_fused_rescan_branchless_64(
     free(hash_buffer);
     *num_syncmers = syncmer_count;
     return syncmer_count;
+}
+
+// ============================================================================
+// 64-bit Iterator API
+// ============================================================================
+
+// Optimized iterator state - shared lookup tables, local variable caching
+typedef struct CsyncmerIterator64 {
+    const uint8_t* seq;
+    uint64_t* hash_buffer;
+    uint64_t hash;
+    uint64_t fw;
+    size_t min_pos;
+    size_t kmer_idx;
+    size_t num_kmers;
+    size_t window_size;
+    size_t S;
+    size_t buf_mask;
+    uint32_t min_hash32;
+    uint64_t f_rot[4];
+} CsyncmerIterator64;
+
+// Create iterator for closed syncmer detection
+// K = total syncmer length, S = smer size (window_size = K - S + 1)
+static inline CsyncmerIterator64* csyncmer_iterator_create_64(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S
+) {
+    if (length < K || S >= K) {
+        return NULL;
+    }
+
+    // Ensure shared lookup tables are initialized
+    csyncmer_ensure_tables_initialized();
+
+    CsyncmerIterator64* iter = (CsyncmerIterator64*)malloc(sizeof(CsyncmerIterator64));
+    if (!iter) return NULL;
+
+    iter->seq = (const uint8_t*)sequence;
+    iter->S = S;
+    iter->window_size = K - S + 1;
+    iter->num_kmers = length - K + 1;
+
+    // Initialize S-dependent rotation table
+    csyncmer_make_f_rot_64(S, iter->f_rot);
+
+    // Allocate power-of-2 circular buffer
+    size_t buf_size = 1;
+    while (buf_size < iter->window_size) buf_size <<= 1;
+    iter->buf_mask = buf_size - 1;
+    iter->hash_buffer = (uint64_t*)malloc(buf_size * sizeof(uint64_t));
+    if (!iter->hash_buffer) {
+        free(iter);
+        return NULL;
+    }
+
+    // Use shared static tables for initialization
+    const uint64_t* F_ASCII = CSYNCMER_F_ASCII_64;
+    const uint8_t* IDX_ASCII = CSYNCMER_IDX_ASCII;
+
+    // Compute first s-mer hash
+    uint64_t hash = 0;
+    for (size_t j = 0; j < S; ++j) {
+        hash = csyncmer_rotl7_64(hash) ^ F_ASCII[iter->seq[j]];
+    }
+    iter->hash = hash;
+    iter->fw = hash ^ iter->f_rot[IDX_ASCII[iter->seq[0]]];
+    iter->hash_buffer[0] = hash;
+
+    // Fill initial window with remaining s-mer hashes
+    for (size_t i = 1; i < iter->window_size; ++i) {
+        hash = csyncmer_rotl7_64(iter->fw) ^ F_ASCII[iter->seq[i + S - 1]];
+        iter->fw = hash ^ iter->f_rot[IDX_ASCII[iter->seq[i]]];
+        iter->hash_buffer[i & iter->buf_mask] = hash;
+    }
+    iter->hash = hash;
+
+    // Find minimum in first window
+    uint32_t min_hash32 = UINT32_MAX;
+    size_t min_pos = 0;
+    for (size_t i = 0; i < iter->window_size; ++i) {
+        uint32_t h32 = (uint32_t)iter->hash_buffer[i];
+        if (h32 < min_hash32) {
+            min_hash32 = h32;
+            min_pos = i;
+        }
+    }
+    iter->min_hash32 = min_hash32;
+    iter->min_pos = min_pos;
+    iter->kmer_idx = 0;
+
+    return iter;
+}
+
+// Get next syncmer position. Returns 1 if valid, 0 when exhausted.
+static inline int csyncmer_iterator_next_64(
+    CsyncmerIterator64* iter,
+    size_t* pos
+) {
+    if (!iter) return 0;
+
+    // Cache hot state in local variables for register allocation
+    const uint8_t* seq = iter->seq;
+    size_t kmer_idx = iter->kmer_idx;
+    const size_t num_kmers = iter->num_kmers;
+    const size_t window_size = iter->window_size;
+    const size_t S = iter->S;
+    uint64_t hash = iter->hash;
+    uint64_t fw = iter->fw;
+    uint32_t min_hash32 = iter->min_hash32;
+    size_t min_pos = iter->min_pos;
+    const size_t buf_mask = iter->buf_mask;
+    uint64_t* hash_buffer = iter->hash_buffer;
+    const uint64_t* f_rot = iter->f_rot;
+
+    // Use shared static tables
+    const uint64_t* F_ASCII = CSYNCMER_F_ASCII_64;
+    const uint8_t* IDX_ASCII = CSYNCMER_IDX_ASCII;
+
+    // Check first k-mer on first call
+    if (kmer_idx == 0) {
+        size_t min_offset = min_pos;
+        if (min_offset == 0 || min_offset == window_size - 1) {
+            *pos = 0;
+            iter->kmer_idx = 1;
+            return 1;
+        }
+        kmer_idx = 1;
+    }
+
+    // Main loop
+    while (kmer_idx < num_kmers) {
+        size_t i = kmer_idx + window_size - 1;
+
+        // Compute new hash for the new s-mer entering the window
+        hash = csyncmer_rotl7_64(fw) ^ F_ASCII[seq[i + S - 1]];
+        fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
+        hash_buffer[i & buf_mask] = hash;
+
+        // RESCAN: update minimum
+        uint32_t hash32 = (uint32_t)hash;
+        if (min_pos < kmer_idx) {
+            // Minimum fell out of window - rescan
+            min_hash32 = UINT32_MAX;
+            for (size_t j = kmer_idx; j <= i; ++j) {
+                uint32_t h32 = (uint32_t)hash_buffer[j & buf_mask];
+                if (h32 < min_hash32) {
+                    min_hash32 = h32;
+                    min_pos = j;
+                }
+            }
+        } else {
+            // Check if new hash is smaller
+            if (hash32 < min_hash32) {
+                min_hash32 = hash32;
+                min_pos = i;
+            }
+        }
+
+        // Check closed syncmer condition
+        size_t min_offset = min_pos - kmer_idx;
+        size_t current_kmer = kmer_idx;
+        kmer_idx++;
+
+        if (min_offset == 0 || min_offset == window_size - 1) {
+            // Write back modified state
+            iter->hash = hash;
+            iter->fw = fw;
+            iter->min_hash32 = min_hash32;
+            iter->min_pos = min_pos;
+            iter->kmer_idx = kmer_idx;
+            *pos = current_kmer;
+            return 1;
+        }
+    }
+
+    // Write back state on exhaustion
+    iter->hash = hash;
+    iter->fw = fw;
+    iter->min_hash32 = min_hash32;
+    iter->min_pos = min_pos;
+    iter->kmer_idx = kmer_idx;
+    return 0;  // Exhausted
+}
+
+// Free iterator
+static inline void csyncmer_iterator_destroy_64(CsyncmerIterator64* iter) {
+    if (iter) {
+        if (iter->hash_buffer) {
+            free(iter->hash_buffer);
+        }
+        free(iter);
+    }
 }
 
 // ============================================================================

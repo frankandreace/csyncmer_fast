@@ -169,7 +169,6 @@ static inline size_t csyncmer_compute_fused_rescan_branchless(
 
     free(hash_buffer);
     *num_syncmers = syncmer_count;
-    printf("[NTHASH32_FUSED_RESCAN_BF]:: COMPUTED %zu CLOSED SYNCMERS\n", syncmer_count);
     return syncmer_count;
 }
 
@@ -314,7 +313,6 @@ static inline size_t csyncmer_compute_simd_multiwindow(
     #undef BUF_MASK
 
     *num_syncmers = syncmer_count;
-    printf("[NTHASH32_SIMD_MULTIWINDOW]:: COMPUTED %zu CLOSED SYNCMERS\n", syncmer_count);
     return syncmer_count;
 }
 
@@ -408,12 +406,13 @@ static inline size_t csyncmer_compute_fused_rescan_branchless_64(
         hash_buffer[i & buf_mask] = hash;
     }
 
-    // Find minimum in first window
-    uint64_t min_hash = UINT64_MAX;
+    // Find minimum in first window (using lower 32 bits for comparison, matching SIMD)
+    uint32_t min_hash32 = UINT32_MAX;
     size_t min_pos = 0;
     for (size_t i = 0; i < window_size; ++i) {
-        if (hash_buffer[i] < min_hash) {
-            min_hash = hash_buffer[i];
+        uint32_t h32 = (uint32_t)hash_buffer[i];
+        if (h32 < min_hash32) {
+            min_hash32 = h32;
             min_pos = i;
         }
     }
@@ -432,19 +431,20 @@ static inline size_t csyncmer_compute_fused_rescan_branchless_64(
         fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
         hash_buffer[i & buf_mask] = hash;
 
-        // RESCAN: update minimum
+        // RESCAN: update minimum (using lower 32 bits for comparison, matching SIMD)
+        uint32_t hash32 = (uint32_t)hash;
         if (min_pos < kmer_idx) {
-            min_hash = UINT64_MAX;
+            min_hash32 = UINT32_MAX;
             for (size_t j = kmer_idx; j <= i; ++j) {
-                uint64_t h = hash_buffer[j & buf_mask];
-                if (h < min_hash) {
-                    min_hash = h;
+                uint32_t h32 = (uint32_t)hash_buffer[j & buf_mask];
+                if (h32 < min_hash32) {
+                    min_hash32 = h32;
                     min_pos = j;
                 }
             }
         } else {
-            uint32_t is_smaller = (hash < min_hash) ? 1 : 0;
-            min_hash = is_smaller ? hash : min_hash;
+            uint32_t is_smaller = (hash32 < min_hash32) ? 1 : 0;
+            min_hash32 = is_smaller ? hash32 : min_hash32;
             min_pos = is_smaller ? i : min_pos;
         }
 
@@ -457,12 +457,11 @@ static inline size_t csyncmer_compute_fused_rescan_branchless_64(
 
     free(hash_buffer);
     *num_syncmers = syncmer_count;
-    printf("[NTHASH64_FUSED_RESCAN_BF]:: COMPUTED %zu CLOSED SYNCMERS\n", syncmer_count);
     return syncmer_count;
 }
 
 // ============================================================================
-// 64-bit SIMD Implementation (4-lane AVX2)
+// 64-bit SIMD Implementation (8-lane using lower 32-bits for comparison)
 // ============================================================================
 
 #ifdef __AVX2__
@@ -483,8 +482,8 @@ static inline size_t csyncmer_compute_simd_multiwindow_64(
     size_t num_smers = length - S + 1;
     size_t num_kmers = num_smers - window_size + 1;
 
-    // Fall back to scalar for small inputs (4-lane now)
-    if (num_kmers < 4) {
+    // Fall back to scalar for small inputs
+    if (num_kmers < 8) {
         return csyncmer_compute_fused_rescan_branchless_64(
             sequence, length, K, S, num_syncmers);
     }
@@ -497,17 +496,19 @@ static inline size_t csyncmer_compute_simd_multiwindow_64(
     csyncmer_init_ascii_to_idx(IDX_ASCII);
     csyncmer_make_f_rot_64(S, f_rot);
 
-    // Ring buffer: 64 elements + 32 extended
+    // Ring buffer for 64-bit hashes, but we'll extract lower 32 bits for SIMD comparison
     #define BUF_SIZE_64 64
     #define BUF_MASK_64 (BUF_SIZE_64 - 1)
     uint64_t buf64[BUF_SIZE_64 + 32] __attribute__((aligned(32)));
+    // Separate buffer for lower 32 bits (for 8-lane SIMD)
+    uint32_t buf32[BUF_SIZE_64 + 32] __attribute__((aligned(32)));
 
     const uint8_t* raw_seq = (const uint8_t*)sequence;
 
     size_t syncmer_count = 0;
-    __m256i window_size_minus_1 = _mm256_set1_epi64x((int64_t)(window_size - 1));
+    __m256i window_size_minus_1 = _mm256_set1_epi32((int)(window_size - 1));
     __m256i zero = _mm256_setzero_si256();
-    __m256i max_val = _mm256_set1_epi64x((int64_t)UINT64_MAX);
+    __m256i max_val = _mm256_set1_epi32((int)UINT32_MAX);
 
     // Initialize first hash
     uint64_t hash = 0;
@@ -517,59 +518,68 @@ static inline size_t csyncmer_compute_simd_multiwindow_64(
     uint64_t fw = hash ^ f_rot[IDX_ASCII[raw_seq[0]]];
     buf64[0] = hash;
     buf64[BUF_SIZE_64] = hash;
+    buf32[0] = (uint32_t)hash;
+    buf32[BUF_SIZE_64] = (uint32_t)hash;
 
-    // Fill initial window + first batch (need 4 windows now)
-    size_t init_size = window_size + 3;
+    // Fill initial window + first batch
+    size_t init_size = window_size + 7;
     for (size_t i = 1; i < init_size; ++i) {
         hash = csyncmer_rotl7_64(fw) ^ F_ASCII[raw_seq[i + S - 1]];
         fw = hash ^ f_rot[IDX_ASCII[raw_seq[i]]];
         size_t buf_idx = i & BUF_MASK_64;
         buf64[buf_idx] = hash;
-        if (buf_idx < 32) buf64[BUF_SIZE_64 + buf_idx] = hash;
+        buf32[buf_idx] = (uint32_t)hash;
+        if (buf_idx < 32) {
+            buf64[BUF_SIZE_64 + buf_idx] = hash;
+            buf32[BUF_SIZE_64 + buf_idx] = (uint32_t)hash;
+        }
     }
     size_t hash_count = init_size;
 
-    // Process 4 k-mers at a time
+    // Sign bit for unsigned 32-bit comparison
+    __m256i sign = _mm256_set1_epi32((int)0x80000000u);
+
+    // Process 8 k-mers at a time (using lower 32 bits)
     size_t k = 0;
-    for (; k + 4 <= num_kmers; k += 4) {
+    for (; k + 8 <= num_kmers; k += 8) {
         size_t start_idx = k & BUF_MASK_64;
         __m256i min_hash = max_val;
         __m256i min_pos = zero;
 
-        // Sign bit for unsigned 64-bit comparison
-        __m256i sign = _mm256_set1_epi64x((int64_t)0x8000000000000000ULL);
-
         for (size_t j = 0; j < window_size; ++j) {
-            __m256i cur_hash = _mm256_loadu_si256((__m256i*)&buf64[start_idx + j]);
-            __m256i cur_pos = _mm256_set1_epi64x((int64_t)j);
+            __m256i cur_hash = _mm256_loadu_si256((__m256i*)&buf32[start_idx + j]);
+            __m256i cur_pos = _mm256_set1_epi32((int)j);
             // Unsigned comparison via sign flip
             __m256i min_signed = _mm256_xor_si256(min_hash, sign);
             __m256i cur_signed = _mm256_xor_si256(cur_hash, sign);
-            __m256i is_smaller = _mm256_cmpgt_epi64(min_signed, cur_signed);
+            __m256i is_smaller = _mm256_cmpgt_epi32(min_signed, cur_signed);
             min_hash = _mm256_blendv_epi8(min_hash, cur_hash, is_smaller);
             min_pos = _mm256_blendv_epi8(min_pos, cur_pos, is_smaller);
         }
 
         // Check closed syncmer condition
-        __m256i is_first = _mm256_cmpeq_epi64(min_pos, zero);
-        __m256i is_last = _mm256_cmpeq_epi64(min_pos, window_size_minus_1);
+        __m256i is_first = _mm256_cmpeq_epi32(min_pos, zero);
+        __m256i is_last = _mm256_cmpeq_epi32(min_pos, window_size_minus_1);
         __m256i is_syncmer = _mm256_or_si256(is_first, is_last);
-        // movemask for 64-bit: use _mm256_movemask_pd
-        syncmer_count += __builtin_popcount(_mm256_movemask_pd(_mm256_castsi256_pd(is_syncmer)));
+        syncmer_count += __builtin_popcount(_mm256_movemask_ps(_mm256_castsi256_ps(is_syncmer)));
 
-        // Compute next 4 hashes
-        size_t end_hash = k + 4 + 3 + window_size;
+        // Compute next 8 hashes
+        size_t end_hash = k + 8 + 7 + window_size;
         if (end_hash > num_smers) end_hash = num_smers;
         for (; hash_count < end_hash; ++hash_count) {
             hash = csyncmer_rotl7_64(fw) ^ F_ASCII[raw_seq[hash_count + S - 1]];
             fw = hash ^ f_rot[IDX_ASCII[raw_seq[hash_count]]];
             size_t buf_idx = hash_count & BUF_MASK_64;
             buf64[buf_idx] = hash;
-            if (buf_idx < 32) buf64[BUF_SIZE_64 + buf_idx] = hash;
+            buf32[buf_idx] = (uint32_t)hash;
+            if (buf_idx < 32) {
+                buf64[BUF_SIZE_64 + buf_idx] = hash;
+                buf32[BUF_SIZE_64 + buf_idx] = (uint32_t)hash;
+            }
         }
     }
 
-    // Handle remaining k-mers with scalar
+    // Handle remaining k-mers with scalar (using 32-bit comparison to match SIMD)
     for (; k < num_kmers; ++k) {
         size_t end_hash = k + window_size;
         for (; hash_count < end_hash; ++hash_count) {
@@ -577,7 +587,11 @@ static inline size_t csyncmer_compute_simd_multiwindow_64(
             fw = hash ^ f_rot[IDX_ASCII[raw_seq[hash_count]]];
             size_t buf_idx = hash_count & BUF_MASK_64;
             buf64[buf_idx] = hash;
-            if (buf_idx < 32) buf64[BUF_SIZE_64 + buf_idx] = hash;
+            buf32[buf_idx] = (uint32_t)hash;
+            if (buf_idx < 32) {
+                buf64[BUF_SIZE_64 + buf_idx] = hash;
+                buf32[BUF_SIZE_64 + buf_idx] = (uint32_t)hash;
+            }
         }
 
         uint64_t local_min_hash = UINT64_MAX;
@@ -599,7 +613,6 @@ static inline size_t csyncmer_compute_simd_multiwindow_64(
     #undef BUF_MASK_64
 
     *num_syncmers = syncmer_count;
-    printf("[NTHASH64_SIMD_MULTIWINDOW]:: COMPUTED %zu CLOSED SYNCMERS\n", syncmer_count);
     return syncmer_count;
 }
 

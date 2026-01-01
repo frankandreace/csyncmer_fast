@@ -674,6 +674,7 @@ size_t count_nthash32_syncmers_vanherk(const char *sequence_input, size_t K, siz
 size_t count_nthash32_syncmers_rescan_bf(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
     csyncmer_compute_fused_rescan_branchless(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    printf("[NTHASH32_FUSED_RESCAN_BF]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
 
@@ -682,6 +683,7 @@ size_t count_nthash32_syncmers_rescan_bf(const char *sequence_input, size_t K, s
 size_t count_nthash32_syncmers_simd_parallel(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
     csyncmer_compute_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    printf("[NTHASH32_SIMD_MULTIWINDOW]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
 #endif
@@ -690,14 +692,16 @@ size_t count_nthash32_syncmers_simd_parallel(const char *sequence_input, size_t 
 size_t count_nthash64_syncmers_scalar(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
     csyncmer_compute_fused_rescan_branchless_64(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    printf("[NTHASH64_FUSED_RESCAN_BF]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
 
 #if defined(__AVX2__)
-/// Count syncmers using ntHash64 4-lane SIMD (for correctness testing)
+/// Count syncmers using ntHash64 8-lane hybrid SIMD (for correctness testing)
 size_t count_nthash64_syncmers_simd(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
     csyncmer_compute_simd_multiwindow_64(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    printf("[NTHASH64_SIMD_MULTIWINDOW]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
 #endif
@@ -954,6 +958,73 @@ int main(int argc, char *argv[]) {
         }
 
         return compute_from_file(fasta_file, K, S, output_file);
+    }
+    else if (strcmp(mode, "quick") == 0) {
+        // Quick benchmark: only runs key implementations with minimal output
+        if (argc < 5) {
+            fprintf(stderr, "Usage: %s quick FASTA_FILE K S [filter]\n", argv[0]);
+            fprintf(stderr, "filter: 32, 64, all (default: all)\n");
+            return 1;
+        }
+        char *fasta_file = argv[2];
+        int K = atoi(argv[3]);
+        int S = atoi(argv[4]);
+        const char *filter = (argc > 5) ? argv[5] : "all";
+
+        if (S >= K) {
+            fprintf(stderr, "Error: S (%d) must be less than K (%d)\n", S, K);
+            return 1;
+        }
+
+        // Read sequence
+        FILE *seqFile = fopen(fasta_file, "r");
+        if (!seqFile) { fprintf(stderr, "Error: Cannot open file\n"); return 1; }
+        stream *seqStream = stream_open_fasta(seqFile);
+        char *sequence = read_sequence(seqStream);
+        size_t length = strlen(sequence);
+        stream_close(seqStream);
+        fclose(seqFile);
+
+        off_t file_size = get_file_size(fasta_file);
+        double file_size_mb = file_size / (1024.0 * 1024.0);
+        size_t num;
+
+        bool run_32 = (strcmp(filter, "32") == 0 || strcmp(filter, "all") == 0);
+        bool run_64 = (strcmp(filter, "64") == 0 || strcmp(filter, "all") == 0);
+
+        printf("%-25s %10s %12s\n", "Implementation", "Syncmers", "Speed (MB/s)");
+        printf("%-25s %10s %12s\n", "-------------------------", "----------", "------------");
+
+        if (run_32) {
+            clock_t start = clock();
+            csyncmer_compute_fused_rescan_branchless(sequence, length, K, S, &num);
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH32_RESCAN_BF", num, file_size_mb / elapsed);
+
+#if defined(__AVX2__)
+            start = clock();
+            csyncmer_compute_simd_multiwindow(sequence, length, K, S, &num);
+            elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH32_SIMD_MULTIWINDOW", num, file_size_mb / elapsed);
+#endif
+        }
+
+        if (run_64) {
+            clock_t start = clock();
+            csyncmer_compute_fused_rescan_branchless_64(sequence, length, K, S, &num);
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH64_RESCAN_BF", num, file_size_mb / elapsed);
+
+#if defined(__AVX2__)
+            start = clock();
+            csyncmer_compute_simd_multiwindow_64(sequence, length, K, S, &num);
+            elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH64_SIMD_MULTIWINDOW", num, file_size_mb / elapsed);
+#endif
+        }
+
+        free((void*)sequence);
+        return 0;
     }
     else {
         fprintf(stderr, "Unknown mode: %s\n", mode);

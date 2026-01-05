@@ -7,11 +7,14 @@ Fast closed syncmer detection using ntHash. Pure C header-only library with AVX2
 ```c
 #include "csyncmer_fast.h"
 
-// Batch API (fastest)
+// TWOSTACK: fastest (~550 MB/s), 32-bit hash, ~99.99996% accurate
 size_t count;
+csyncmer_compute_twostack_simd_32_count(seq, len, K, S, &count);
+
+// RESCAN: exact results (~200 MB/s), 64-bit hash
 csyncmer_compute_fused_rescan_branchless_64(seq, len, K, S, &count);
 
-// Iterator API (incremental)
+// Iterator API (incremental, exact)
 CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
 size_t pos;
 while (csyncmer_iterator_next_64(iter, &pos)) {
@@ -34,18 +37,22 @@ misc/
 
 ## Implementations in csyncmer_fast.h
 
-### 64-bit ntHash (recommended)
+### 32-bit ntHash TWOSTACK (fastest)
 | Function | Type | Speed | Description |
 |----------|------|-------|-------------|
-| `csyncmer_compute_fused_rescan_branchless_64` | Batch | ~150-200 MB/s | Scalar, O(1) amortized |
-| `csyncmer_compute_simd_multiwindow_64` | Batch | ~130-185 MB/s | AVX2 8-lane parallel |
-| `csyncmer_iterator_create/next/destroy_64` | Iterator | ~115-155 MB/s | Incremental, O(1) amortized |
+| `csyncmer_compute_twostack_simd_32_count` | Batch | ~350-550 MB/s | Count only, AVX2 |
+| `csyncmer_compute_twostack_simd_32` | Batch | ~190-250 MB/s | With positions, AVX2 |
 
-### 32-bit ntHash (legacy)
+### 64-bit ntHash (recommended for exact results)
 | Function | Type | Speed | Description |
 |----------|------|-------|-------------|
-| `csyncmer_compute_fused_rescan_branchless` | Batch | ~110-145 MB/s | Scalar fallback |
-| `csyncmer_compute_simd_multiwindow` | Batch | ~140-175 MB/s | AVX2 8-lane parallel |
+| `csyncmer_compute_fused_rescan_branchless_64` | Batch | ~140-210 MB/s | Scalar, O(1) amortized |
+| `csyncmer_iterator_create/next/destroy_64` | Iterator | ~145-160 MB/s | Incremental, O(1) amortized |
+
+### 32-bit ntHash (internal)
+| Function | Type | Speed | Description |
+|----------|------|-------|-------------|
+| `csyncmer_compute_fused_rescan_branchless` | Batch | ~110-155 MB/s | TWOSTACK fallback |
 
 ## Key Algorithms
 
@@ -54,11 +61,11 @@ misc/
 - Branch-free minimum update using conditional moves
 - Circular buffer with power-of-2 size for fast modulo
 
-### SIMD Multiwindow
-- Processes 8 consecutive k-mers in parallel
-- Extended ring buffer (64 + 32 elements) eliminates wrap-around branches
-- O(window_size) per 8 k-mers, but parallelism compensates
-- Uses lower 32 bits for comparison (64-bit version)
+### TWOSTACK (Fastest)
+- Two-stack sliding minimum algorithm with O(1) amortized operations
+- Splits sequence into 8 chunks processed in parallel with AVX2
+- Packs hash (upper 16 bits) + position (lower 16 bits) for SIMD comparison
+- Falls back to RESCAN for small inputs or window_size > 64
 
 ### Iterator
 - Shared static lookup tables (~2KB saved per iterator)
@@ -76,8 +83,35 @@ make clean && make
 ./benchmark bench ~/data/human.chr19.fasta 31 15 out.txt  # full benchmark
 ```
 
+## Optimization Notes
+
+### TWOSTACK Algorithm
+
+The fastest implementation uses the simd-minimizers approach:
+- Splits sequence into 8 independent chunks processed in parallel with AVX2
+- Uses two-stack (prefix-suffix) sliding minimum algorithm: O(1) amortized
+- Packs hash (upper 16 bits) + position (lower 16 bits) for SIMD comparison
+
+**Limitation**: Uses 16-bit hash comparison, which can cause ~0.00004% error rate when two s-mers have identical upper 16 bits but different lower 16 bits. For exact results, use the 64-bit RESCAN implementation.
+
+### RESCAN Algorithm
+
+The 64-bit RESCAN approach provides exact results:
+- O(1) amortized: only rescans window when minimum falls out (~6% of iterations)
+- Branch-free minimum update using conditional moves
+- Circular buffer with power-of-2 size for fast modulo
+
+### Performance Comparison
+
+| Implementation | Speed | Exact? | Use Case |
+|----------------|-------|--------|----------|
+| TWOSTACK (32-bit) | ~350-550 MB/s | ~99.99996% | High throughput |
+| RESCAN (64-bit) | ~140-210 MB/s | 100% | Exact results |
+| Iterator (64-bit) | ~145-160 MB/s | 100% | Incremental processing |
+
 ## Notes
 
 - Different hash sizes (32/64/128-bit) produce different syncmer counts due to different tie-breaking
-- 64-bit scalar RESCAN is often faster than 64-bit SIMD due to O(1) vs O(w) complexity
+- TWOSTACK is fastest but uses 16-bit hash approximation; use RESCAN for exact results
 - Iterator is ~75-80% of batch speed (inherent overhead from state save/restore)
+- Deprecated implementations (SIMD multiwindow) are archived in `misc/older/deprecated_simd_mw.h`

@@ -512,22 +512,6 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     print_benchmark("NTH32_VANHERK", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 RESCAN BRANCHLESS]]\n");
-    start_time = clock();
-    csyncmer_compute_fused_rescan_branchless(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
-    end_time = clock();
-    print_benchmark("NTH32_RESCAN_BF", start_time, end_time, fasta_filename, filePtr);
-    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
-
-#if defined(__AVX2__)
-    printf("[[NTHASH32 SIMD MULTIWINDOW]]\n");
-    start_time = clock();
-    csyncmer_compute_simd_multiwindow(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
-    end_time = clock();
-    print_benchmark("NTH32_SIMD_MULTIWINDOW", start_time, end_time, fasta_filename, filePtr);
-    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
-#endif
-
     // ntHash64 benchmarks
     size_t num_nthash64_syncmer;
 
@@ -537,15 +521,6 @@ int compute_from_file(char *fasta_filename, int K, int S, char *output_file){
     end_time = clock();
     print_benchmark("NTH64_RESCAN_BF", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
-
-#if defined(__AVX2__)
-    printf("[[NTHASH64 SIMD MULTIWINDOW]]\n");
-    start_time = clock();
-    csyncmer_compute_simd_multiwindow_64(sequence_input, sequence_input_length, K, S, &num_nthash64_syncmer);
-    end_time = clock();
-    print_benchmark("NTH64_SIMD_MULTIWINDOW", start_time, end_time, fasta_filename, filePtr);
-    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
-#endif
 
     if (filePtr != NULL) { fprintf(filePtr, "\n"); }
 
@@ -670,24 +645,6 @@ size_t count_nthash32_syncmers_vanherk(const char *sequence_input, size_t K, siz
     return num_syncmers;
 }
 
-/// Count syncmers using ntHash32 branchless RESCAN (for correctness testing)
-size_t count_nthash32_syncmers_rescan_bf(const char *sequence_input, size_t K, size_t S) {
-    size_t num_syncmers = 0;
-    csyncmer_compute_fused_rescan_branchless(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
-    printf("[NTHASH32_FUSED_RESCAN_BF]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
-    return num_syncmers;
-}
-
-#if defined(__AVX2__)
-/// Count syncmers using 8-lane parallel SIMD (for correctness testing)
-size_t count_nthash32_syncmers_simd_parallel(const char *sequence_input, size_t K, size_t S) {
-    size_t num_syncmers = 0;
-    csyncmer_compute_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
-    printf("[NTHASH32_SIMD_MULTIWINDOW]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
-    return num_syncmers;
-}
-#endif
-
 /// Count syncmers using ntHash64 scalar (for correctness testing)
 size_t count_nthash64_syncmers_scalar(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
@@ -697,11 +654,30 @@ size_t count_nthash64_syncmers_scalar(const char *sequence_input, size_t K, size
 }
 
 #if defined(__AVX2__)
-/// Count syncmers using ntHash64 8-lane hybrid SIMD (for correctness testing)
-size_t count_nthash64_syncmers_simd(const char *sequence_input, size_t K, size_t S) {
-    size_t num_syncmers = 0;
-    csyncmer_compute_simd_multiwindow_64(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
-    printf("[NTHASH64_SIMD_MULTIWINDOW]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
+/// Count syncmers using ntHash32 two-stack SIMD (optimized with 2-bit packing)
+size_t count_nthash32_syncmers_twostack_simd(const char *sequence_input, size_t K, size_t S) {
+    size_t len = strlen(sequence_input);
+    size_t max_positions = len;  // Upper bound
+    uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+    if (!positions) return 0;
+
+    size_t num_syncmers = csyncmer_compute_twostack_simd_32(sequence_input, len, K, S, positions, max_positions);
+    printf("[NTHASH32_TWOSTACK_SIMD]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
+    free(positions);
+    return num_syncmers;
+}
+
+/// Count syncmers using ntHash32 SIMD with position collection
+size_t count_nthash32_syncmers_simd_positions(const char *sequence_input, size_t K, size_t S) {
+    size_t len = strlen(sequence_input);
+    size_t max_positions = len;  // Upper bound
+    uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+    if (!positions) return 0;
+
+    size_t num_syncmers = csyncmer_compute_twostack_simd_32(sequence_input, len, K, S, positions, max_positions);
+    printf("[NTHASH32_SYNCMERS_SIMD]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
+
+    free(positions);
     return num_syncmers;
 }
 #endif
@@ -806,28 +782,23 @@ int compute_from_sequence(char *sequence_input, int K, int S){
         printf("[NTHASH32 ERROR] RESCAN: %lu ; VANHERK: %lu\n", num_nthash32_2bit_rescan, num_nthash32_vanherk);
         nthash32_ok = false;
     }
-    size_t num_nthash32_2bit_rescan_bf = count_nthash32_syncmers_rescan_bf(sequence_input, K, S);
-    if (num_nthash32_2bit_rescan != num_nthash32_2bit_rescan_bf) {
-        printf("[NTHASH32 ERROR] RESCAN: %lu ; RESCAN_BF: %lu\n", num_nthash32_2bit_rescan, num_nthash32_2bit_rescan_bf);
-        nthash32_ok = false;
-    }
-#if defined(__AVX2__)
-    size_t num_nthash32_simd_multiwindow = count_nthash32_syncmers_simd_parallel(sequence_input, K, S);
-    if (num_nthash32_2bit_rescan != num_nthash32_simd_multiwindow) {
-        printf("[NTHASH32 ERROR] RESCAN: %lu ; SIMD_PARALLEL: %lu\n", num_nthash32_2bit_rescan, num_nthash32_simd_multiwindow);
-        nthash32_ok = false;
-    }
-#endif
 
     // Test ntHash64 implementations
     printf("\n=== TESTING NTHASH64 IMPLEMENTATION (64-bit) ===\n");
     bool nthash64_ok = true;
     size_t num_nthash64_scalar = count_nthash64_syncmers_scalar(sequence_input, K, S);
+
+    // Test ntHash32 TWOSTACK_SIMD (compare against 32-bit reference, not 64-bit)
 #if defined(__AVX2__)
-    size_t num_nthash64_simd = count_nthash64_syncmers_simd(sequence_input, K, S);
-    if (num_nthash64_scalar != num_nthash64_simd) {
-        printf("[NTHASH64 ERROR] SCALAR: %lu ; SIMD: %lu\n", num_nthash64_scalar, num_nthash64_simd);
-        nthash64_ok = false;
+    size_t num_nthash32_twostack_simd = count_nthash32_syncmers_twostack_simd(sequence_input, K, S);
+    if (num_nthash32_2bit_rescan != num_nthash32_twostack_simd) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; TWOSTACK_SIMD: %lu\n", num_nthash32_2bit_rescan, num_nthash32_twostack_simd);
+        nthash32_ok = false;
+    }
+    size_t num_nthash32_syncmers_simd = count_nthash32_syncmers_simd_positions(sequence_input, K, S);
+    if (num_nthash32_2bit_rescan != num_nthash32_syncmers_simd) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; SYNCMERS_SIMD: %lu\n", num_nthash32_2bit_rescan, num_nthash32_syncmers_simd);
+        nthash32_ok = false;
     }
 #endif
     size_t num_nthash64_iter = count_nthash64_syncmers_iterator(sequence_input, K, S);
@@ -1014,32 +985,11 @@ int main(int argc, char *argv[]) {
         printf("%-25s %10s %12s\n", "Implementation", "Syncmers", "Speed (MB/s)");
         printf("%-25s %10s %12s\n", "-------------------------", "----------", "------------");
 
-        if (run_32) {
-            clock_t start = clock();
-            csyncmer_compute_fused_rescan_branchless(sequence, length, K, S, &num);
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_RESCAN_BF", num, file_size_mb / elapsed);
-
-#if defined(__AVX2__)
-            start = clock();
-            csyncmer_compute_simd_multiwindow(sequence, length, K, S, &num);
-            elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_SIMD_MULTIWINDOW", num, file_size_mb / elapsed);
-#endif
-        }
-
         if (run_64) {
             clock_t start = clock();
             csyncmer_compute_fused_rescan_branchless_64(sequence, length, K, S, &num);
             double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH64_RESCAN_BF", num, file_size_mb / elapsed);
-
-#if defined(__AVX2__)
-            start = clock();
-            csyncmer_compute_simd_multiwindow_64(sequence, length, K, S, &num);
-            elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH64_SIMD_MULTIWINDOW", num, file_size_mb / elapsed);
-#endif
+            printf("%-25s %10zu %12.2f\n", "NTH64_RESCAN_BF_COUNT", num, file_size_mb / elapsed);
 
             // Iterator benchmark
             start = clock();
@@ -1051,8 +1001,31 @@ int main(int argc, char *argv[]) {
                 csyncmer_iterator_destroy_64(it);
             }
             elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH64_ITERATOR", num, file_size_mb / elapsed);
+            printf("%-25s %10zu %12.2f\n", "NTH64_ITERATOR_POS", num, file_size_mb / elapsed);
 
+        }
+
+        if (run_32) {
+#if defined(__AVX2__)
+            // TWOSTACK count-only (no position collection)
+            {
+                clock_t start = clock();
+                size_t count = csyncmer_compute_twostack_simd_32_count(sequence, length, K, S);
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                printf("%-25s %10zu %12.2f\n", "NTH32_TWOSTACK_COUNT", count, file_size_mb / elapsed);
+            }
+
+            // TWOSTACK with position collection
+            size_t max_positions = length;
+            uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+            if (positions) {
+                clock_t start = clock();
+                size_t count = csyncmer_compute_twostack_simd_32(sequence, length, K, S, positions, max_positions);
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                printf("%-25s %10zu %12.2f\n", "NTH32_TWOSTACK_POS", count, file_size_mb / elapsed);
+                free(positions);
+            }
+#endif
         }
 
         free((void*)sequence);

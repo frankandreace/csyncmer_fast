@@ -7,10 +7,21 @@ Fast closed syncmer detection using ntHash. Pure C header-only library with AVX2
 ```c
 #include "csyncmer_fast.h"
 
-// TWOSTACK: fastest (~550 MB/s), AVX2, ~99.99996% accurate
+// TWOSTACK: fastest (~600 MB/s), AVX2, ~99.99996% accurate
 size_t count = csyncmer_compute_twostack_simd_32_count(seq, len, K, S);
 
-// Iterator: scalar, portable, exact results (~160 MB/s)
+// Canonical TWOSTACK: strand-independent (~550 MB/s), AVX2
+size_t canon_count = csyncmer_compute_twostack_simd_32_canonical_count(seq, len, K, S);
+
+// Canonical TWOSTACK with positions and strands (~180 MB/s), AVX2
+uint32_t positions[10000];
+uint8_t strands[10000];
+size_t n = csyncmer_compute_twostack_simd_32_canonical(seq, len, K, S, positions, strands, 10000);
+for (size_t i = 0; i < n; i++) {
+    // positions[i]: syncmer position, strands[i]: 0=forward, 1=RC had minimal s-mer
+}
+
+// Iterator: scalar, portable, exact results (~165 MB/s)
 CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
 size_t pos;
 while (csyncmer_iterator_next_64(iter, &pos)) {
@@ -18,7 +29,7 @@ while (csyncmer_iterator_next_64(iter, &pos)) {
 }
 csyncmer_iterator_destroy_64(iter);
 
-// Canonical iterator: strand-independent (~100-110 MB/s)
+// Canonical iterator: strand-independent (~130 MB/s), scalar
 CsyncmerIteratorCanonical64* citer = csyncmer_iterator_create_canonical_64(seq, len, K, S);
 int strand;
 while (csyncmer_iterator_next_canonical_64(citer, &pos, &strand)) {
@@ -44,8 +55,10 @@ misc/
 ### 32-bit ntHash TWOSTACK (fastest)
 | Function | Type | Speed | Description |
 |----------|------|-------|-------------|
-| `csyncmer_compute_twostack_simd_32_count` | Batch | ~350-550 MB/s | Count only, AVX2 |
-| `csyncmer_compute_twostack_simd_32` | Batch | ~190-250 MB/s | With positions, AVX2 |
+| `csyncmer_compute_twostack_simd_32_count` | Batch | ~550-635 MB/s | Count only, AVX2 |
+| `csyncmer_compute_twostack_simd_32` | Batch | ~250-290 MB/s | With positions, AVX2 |
+| `csyncmer_compute_twostack_simd_32_canonical_count` | Batch | ~500-570 MB/s | Canonical count, AVX2 |
+| `csyncmer_compute_twostack_simd_32_canonical` | Batch | ~170-200 MB/s | Canonical with positions/strands, AVX2 |
 
 ### 64-bit ntHash (scalar, portable, exact)
 | Function | Type | Speed | Description |
@@ -70,6 +83,7 @@ misc/
 - Splits sequence into 8 chunks processed in parallel with AVX2
 - Packs hash (upper 16 bits) + position (lower 16 bits) for SIMD comparison
 - Falls back to RESCAN for small inputs or window_size > 64
+- Canonical variant computes both forward and RC hashes in parallel, uses min(fw, rc)
 
 ### Iterator
 - Shared static lookup tables (~2KB saved per iterator)
@@ -120,15 +134,17 @@ The 64-bit Iterator uses the RESCAN algorithm internally:
 
 | Implementation | Speed | Exact? | Use Case |
 |----------------|-------|--------|----------|
-| TWOSTACK (32-bit) | ~350-550 MB/s | ~99.99996% | High throughput, AVX2 required |
-| Iterator (64-bit) | ~145-160 MB/s | 100% | Exact results, scalar, portable |
-| Canonical Iterator (64-bit) | ~100-110 MB/s | 100% | Strand-independent results |
+| TWOSTACK (32-bit) | ~550-635 MB/s | ~99.99996% | High throughput, AVX2 required |
+| TWOSTACK Canonical (32-bit) | ~500-570 MB/s | ~99.99996% | Strand-independent, AVX2 |
+| Iterator (64-bit) | ~145-165 MB/s | 100% | Exact results, scalar, portable |
+| Canonical Iterator (64-bit) | ~100-130 MB/s | 100% | Strand-independent results, portable |
 
 ## Notes
 
 - Different hash sizes (32/64-bit) produce different syncmer counts due to different tie-breaking
 - TWOSTACK is fastest but requires AVX2 and uses 16-bit hash approximation
+- Canonical TWOSTACK SIMD is 4-5x faster than scalar canonical iterator
 - Iterator is scalar (no SIMD) - works on any CPU including ARM
-- Canonical iterator uses min(forward, reverse_complement) hash for strand independence
-- Canonical iterator tracks which strand (forward=0, RC=1) had the minimal s-mer
+- Canonical implementations use min(forward, reverse_complement) hash for strand independence
+- Canonical implementations track which strand (forward=0, RC=1) had the minimal s-mer
 - Deprecated implementations are archived in `misc/legacy/`

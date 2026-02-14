@@ -324,6 +324,43 @@ size_t count_nthash32_syncmers_simd_positions(const char *sequence_input, size_t
     free(positions);
     return num_syncmers;
 }
+
+size_t count_nthash32_canonical_twostack_simd_count(const char *sequence_input, size_t K, size_t S) {
+    size_t len = strlen(sequence_input);
+    size_t num_syncmers = csyncmer_compute_twostack_simd_32_canonical_count(sequence_input, len, K, S);
+    printf("[NTHASH32_CANONICAL_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
+    return num_syncmers;
+}
+
+size_t count_nthash32_canonical_twostack_simd_positions(const char *sequence_input, size_t K, size_t S,
+                                                         size_t* fw_count, size_t* rc_count) {
+    size_t len = strlen(sequence_input);
+    size_t max_positions = len;
+    uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+    uint8_t* strands = (uint8_t*)aligned_alloc(32, max_positions);
+    if (!positions || !strands) {
+        free(positions);
+        free(strands);
+        return 0;
+    }
+
+    size_t num_syncmers = csyncmer_compute_twostack_simd_32_canonical(
+        sequence_input, len, K, S, positions, strands, max_positions);
+
+    *fw_count = 0;
+    *rc_count = 0;
+    for (size_t i = 0; i < num_syncmers; i++) {
+        if (strands[i] == 0) (*fw_count)++;
+        else (*rc_count)++;
+    }
+
+    printf("[NTHASH32_CANONICAL_TWOSTACK_POS]:: COMPUTED %zu CLOSED SYNCMERS (fw: %zu, rc: %zu)\n",
+           num_syncmers, *fw_count, *rc_count);
+
+    free(positions);
+    free(strands);
+    return num_syncmers;
+}
 #endif
 
 // ============================================================================
@@ -461,6 +498,38 @@ int run_correctness_check(char *sequence_input, int K, int S){
     if (num_nthash32_2bit_rescan != num_nthash32_simd_mw) {
         printf("[NTHASH32 ERROR] RESCAN: %lu ; SIMD_MW: %lu\n", num_nthash32_2bit_rescan, num_nthash32_simd_mw);
         nthash32_ok = false;
+    }
+
+    // Test canonical SIMD TWOSTACK
+    printf("\n=== TESTING NTHASH32 CANONICAL SIMD IMPLEMENTATIONS ===\n");
+
+    // Get 32-bit scalar canonical as reference (same hash values as SIMD)
+    size_t num_nthash32_canonical_scalar = csyncmer_compute_canonical_rescan_32_count(
+        sequence_input, strlen(sequence_input), K, S);
+    printf("[NTHASH32_CANONICAL_SCALAR]:: COMPUTED %zu CLOSED SYNCMERS\n", num_nthash32_canonical_scalar);
+
+    size_t canon_simd_fw, canon_simd_rc;
+    size_t num_nthash32_canonical_twostack_pos = count_nthash32_canonical_twostack_simd_positions(
+        sequence_input, K, S, &canon_simd_fw, &canon_simd_rc);
+    size_t num_nthash32_canonical_twostack_count = count_nthash32_canonical_twostack_simd_count(
+        sequence_input, K, S);
+
+    // Compare canonical SIMD with 32-bit scalar reference (allowing 0.1% tolerance for 16-bit hash approx)
+    double canonical_simd_diff = (double)labs((long)num_nthash32_canonical_scalar - (long)num_nthash32_canonical_twostack_count) / num_nthash32_canonical_scalar;
+    if (canonical_simd_diff > 0.001) {
+        printf("[CANONICAL SIMD ERROR] SCALAR: %zu ; TWOSTACK_COUNT: %zu (diff: %.4f%%)\n",
+               num_nthash32_canonical_scalar, num_nthash32_canonical_twostack_count, canonical_simd_diff * 100);
+        canonical_ok = false;
+    } else if (num_nthash32_canonical_scalar != num_nthash32_canonical_twostack_count) {
+        printf("[CANONICAL SIMD NOTE] Approx diff: %ld (%.4f%% - within tolerance)\n",
+               (long)num_nthash32_canonical_twostack_count - (long)num_nthash32_canonical_scalar, canonical_simd_diff * 100);
+    }
+
+    // Verify count-only and position versions agree
+    if (num_nthash32_canonical_twostack_pos != num_nthash32_canonical_twostack_count) {
+        printf("[CANONICAL SIMD ERROR] POS: %zu ; COUNT: %zu\n",
+               num_nthash32_canonical_twostack_pos, num_nthash32_canonical_twostack_count);
+        canonical_ok = false;
     }
 #endif
 

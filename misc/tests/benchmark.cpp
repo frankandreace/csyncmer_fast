@@ -465,6 +465,27 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
             printf("%-25s %10zu %12.2f\n", "NTH32_TWOSTACK_POS", count, file_size_mb / elapsed);
             free(positions);
         }
+
+        // Canonical TWOSTACK count-only
+        {
+            clock_t start = clock();
+            size_t count = csyncmer_compute_twostack_simd_32_canonical_count(sequence, length, K, S);
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH32_CANON_TWOSTACK_CNT", count, file_size_mb / elapsed);
+        }
+
+        // Canonical TWOSTACK with position and strand collection
+        uint8_t* strands = (uint8_t*)aligned_alloc(32, max_positions);
+        if (positions && strands) {
+            positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+            clock_t start = clock();
+            size_t count = csyncmer_compute_twostack_simd_32_canonical(
+                sequence, length, K, S, positions, strands, max_positions);
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH32_CANON_TWOSTACK_POS", count, file_size_mb / elapsed);
+            free(positions);
+            free(strands);
+        }
 #endif
     }
 

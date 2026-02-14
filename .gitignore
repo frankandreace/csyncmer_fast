@@ -2,8 +2,10 @@
 .vscode/
 
 # Build artifacts
-misc/bench/*.o
-misc/bench/benchmark
+misc/tests/*.o
+misc/tests/benchmark
+misc/tests/test
+misc/tests/results/
 misc/python/dist/
 misc/python/*.egg-info/
 misc/python/build/
@@ -14,8 +16,14 @@ benchmark/
 # Data files
 data/
 
-# Examples
-examples/
+# Example binary
+example
 
 # Generated files
 *.svg
+
+# Editor files
+*.swp
+
+# Claude Code
+CLAUDE.md

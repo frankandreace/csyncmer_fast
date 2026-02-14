@@ -5,7 +5,7 @@ SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 cd "$SCRIPT_DIR"
 
 # Default values
-DEFAULT_FILE="../../data/chr19_bit.fa"
+DEFAULT_FILE="../tests/test_100kbp.fasta"
 DEFAULT_KMER_SIZE=31
 DEFAULT_SMER_SIZE=11
 
@@ -31,10 +31,11 @@ done
 FILE="${FILE:-$DEFAULT_FILE}"
 KMER_SIZE="${KMER_SIZE:-$DEFAULT_KMER_SIZE}"
 SMER_SIZE="${SMER_SIZE:-$DEFAULT_SMER_SIZE}"
-OUTFILE="../../benchmark/results/benchmark.tsv"
+OUTDIR="../tests/results"
+OUTFILE="$OUTDIR/benchmark.tsv"
 
 echo "PROFILING CODE"
-mkdir -p "../../benchmark/results"
+mkdir -p "$OUTDIR"
 
 echo "Setting cpu to 2.6 GHz."
 echo "[Executing] sudo cpupower frequency-set --governor powersave -d 2.6GHz -u 2.6GHz"
@@ -50,11 +51,11 @@ else
     echo "HYPERTHREADING is already disabled (status: $SMT_STATUS)."
 fi
 
-BENCHMARK="../bench/benchmark"
+BENCHMARK="../tests/benchmark"
 
 echo "RUNNING PERF + FLAMEGRAPH"
 
-perf record -F 99 -a -g $BENCHMARK bench $FILE $KMER_SIZE $SMER_SIZE $OUTFILE
+perf record -F 99 -a -g $BENCHMARK $FILE $KMER_SIZE $SMER_SIZE $OUTFILE
 perf script > ../../script_report.perf
 ../../FlameGraph/stackcollapse-perf.pl ../../script_report.perf --all > ../../report.collapsed
 ../../FlameGraph/flamegraph.pl --color=java --hash ../../report.collapsed > ../../report.svg

@@ -7,35 +7,34 @@ Utility scripts for benchmarking and testing csyncmer_fast.
 | Script | Purpose |
 |--------|---------|
 | `test.sh` | Full benchmark suite - runs speed test 10x and plots results |
-| `test_speed.sh` | Single benchmark run with CPU pinning for accurate timing |
-| `test_speed_cluster.sh` | Simple speed test for cluster environments (no CPU manipulation) |
+| `test_speed.sh` | Single benchmark run with optional CPU pinning |
 | `test_correctness.sh` | Fuzz testing - verifies all algorithms produce identical results |
-| `profile.sh` | Deep profiling with perf, FlameGraph, valgrind massif/cachegrind |
+| `profile.sh` | Deep profiling with perf, FlameGraph, valgrind |
 | `plot_result.py` | Generates boxplot charts from benchmark TSV results |
 
 ## Usage
 
 All scripts should be run from this directory (`misc/scripts/`).
 
-### Running the Full Benchmark Suite
-```bash
-./test.sh
-```
-Runs `test_speed.sh` 10 times and generates plots in `../../benchmark/results/`.
-
 ### Single Speed Benchmark
 ```bash
-./test_speed.sh                          # Use defaults
+./test_speed.sh                          # With CPU pinning (requires sudo)
+./test_speed.sh -c                       # Cluster mode (no sudo, no CPU manipulation)
 ./test_speed.sh -f /path/to/file.fa      # Custom FASTA file
 ./test_speed.sh -k 31 -s 11              # Custom K and S values
 ```
-Pins CPU to 2.6GHz, disables hyperthreading, runs benchmark, restores settings.
 
-### Cluster Speed Benchmark
+Options:
+- `-f FILE` - FASTA file to benchmark
+- `-k SIZE` - K-mer size (default: 31)
+- `-s SIZE` - S-mer size (default: 11)
+- `-c` - Cluster mode: skip CPU frequency/SMT manipulation (no sudo required)
+
+### Full Benchmark Suite
 ```bash
-./test_speed_cluster.sh
+./test.sh
 ```
-Same as `test_speed.sh` but without CPU/SMT manipulation (for shared clusters).
+Runs `test_speed.sh` 10 times and generates plots in `../tests/results/`.
 
 ### Correctness Testing
 ```bash
@@ -48,7 +47,7 @@ Generates 10 random 10kb sequences with random K/S values, verifies all algorith
 ./profile.sh                             # Use defaults
 ./profile.sh -f /path/to/file.fa         # Custom FASTA file
 ```
-Runs perf + FlameGraph, cache miss analysis, valgrind massif (memory), and cachegrind (cache simulation). Requires `perf`, `valgrind`, and FlameGraph tools.
+Runs perf + FlameGraph, cache miss analysis, valgrind massif (memory), and cachegrind (cache simulation).
 
 ### Plotting Results
 ```bash
@@ -56,9 +55,13 @@ Runs perf + FlameGraph, cache miss analysis, valgrind massif (memory), and cache
 ```
 Reads benchmark TSV, generates `output_prefix.png` (all algorithms) and `output_prefix_focus.png` (syncmer implementations only).
 
+## Output
+
+All benchmark results are saved to `misc/tests/results/`.
+
 ## Prerequisites
 
-- Built benchmark binary: `make` from repo root (produces `misc/bench/benchmark`)
-- For `test_speed.sh` and `profile.sh`: sudo access for CPU frequency/SMT control
+- Built benchmark binary: `make` in `misc/tests/`
+- For `test_speed.sh` (without -c): sudo access for CPU frequency/SMT control
 - For `profile.sh`: perf, valgrind, FlameGraph (expected at `../../FlameGraph/`)
-- For `plot_result.py`: Python with pandas and matplotlib
+- For `plot_result.py` (optional): Python with pandas and matplotlib

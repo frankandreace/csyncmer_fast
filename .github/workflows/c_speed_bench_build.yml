@@ -5,13 +5,13 @@ on:
     branches: ["main", "dev"]
     paths:
       - 'csyncmer_fast.h'
-      - 'misc/bench/**'
+      - 'misc/tests/**'
       - 'misc/syng/**'
   pull_request:
     branches: ["main", "dev"]
     paths:
       - 'csyncmer_fast.h'
-      - 'misc/bench/**'
+      - 'misc/tests/**'
       - 'misc/syng/**'
   workflow_dispatch:
 
@@ -30,7 +30,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Build the C speed benchmark executable
-      run: cd misc/bench && make
+      run: cd misc/tests && make
 
     - name: Run unit tests
-      run: cd misc/bench && ./benchmark test
+      run: cd misc/tests && ./benchmark test

@@ -12,11 +12,12 @@ cd "$SCRIPT_DIR"
 
 
 # TESTING COMPUTATION SPEED
-rm -rf ../../benchmark/results/benchmark.tsv ../../benchmark/results/benchmark_plot*
+OUTDIR="../tests/results"
+rm -rf "$OUTDIR/benchmark.tsv" "$OUTDIR/benchmark_plot"*
 
 for i in {1..10}
 do
     ./test_speed.sh
 done
 
-./plot_result.py ../../benchmark/results/benchmark.tsv ../../benchmark/results/benchmark_plot
+./plot_result.py "$OUTDIR/benchmark.tsv" "$OUTDIR/benchmark_plot"

@@ -7,14 +7,10 @@ Fast closed syncmer detection using ntHash. Pure C header-only library with AVX2
 ```c
 #include "csyncmer_fast.h"
 
-// TWOSTACK: fastest (~550 MB/s), 32-bit hash, ~99.99996% accurate
-size_t count;
-csyncmer_compute_twostack_simd_32_count(seq, len, K, S, &count);
+// TWOSTACK: fastest (~550 MB/s), AVX2, ~99.99996% accurate
+size_t count = csyncmer_compute_twostack_simd_32_count(seq, len, K, S);
 
-// RESCAN: exact results (~200 MB/s), 64-bit hash
-csyncmer_compute_fused_rescan_branchless_64(seq, len, K, S, &count);
-
-// Iterator API (incremental, exact)
+// Iterator: scalar, portable, exact results (~160 MB/s)
 CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
 size_t pos;
 while (csyncmer_iterator_next_64(iter, &pos)) {
@@ -28,9 +24,9 @@ csyncmer_iterator_destroy_64(iter);
 ```
 csyncmer_fast.h          # Main header (pure C, header-only)
 misc/
-  bench/                 # Benchmark suite (benchmark.cpp)
-  simd/                  # SIMD utilities (legacy C++, not used by main header)
-  older/                 # Archived C++ implementations
+  tests/                 # Tests and benchmarks (test.cpp, benchmark.cpp)
+  legacy/                # Deprecated implementations (organized by hash type)
+  simd/                  # SIMD utilities (legacy C++)
   syng/                  # External syng library (seqhash)
   python/                # Python bindings
 ```
@@ -43,11 +39,10 @@ misc/
 | `csyncmer_compute_twostack_simd_32_count` | Batch | ~350-550 MB/s | Count only, AVX2 |
 | `csyncmer_compute_twostack_simd_32` | Batch | ~190-250 MB/s | With positions, AVX2 |
 
-### 64-bit ntHash (recommended for exact results)
+### 64-bit ntHash (scalar, portable, exact)
 | Function | Type | Speed | Description |
 |----------|------|-------|-------------|
-| `csyncmer_compute_fused_rescan_branchless_64` | Batch | ~140-210 MB/s | Scalar, O(1) amortized |
-| `csyncmer_iterator_create/next/destroy_64` | Iterator | ~145-160 MB/s | Incremental, O(1) amortized |
+| `csyncmer_iterator_create/next/destroy_64` | Iterator | ~145-160 MB/s | Scalar, incremental, O(1) amortized |
 
 ### 32-bit ntHash (internal)
 | Function | Type | Speed | Description |
@@ -72,15 +67,21 @@ misc/
 - Local variable caching for register allocation
 - Same RESCAN algorithm as batch
 
-## Benchmarking
+## Testing & Benchmarking
 
 ```bash
-cd misc/bench
+cd misc/tests
 make clean && make
-./benchmark check ~/data/human.chr19.fasta 31 15       # correctness
-./benchmark quick ~/data/human.chr19.fasta 31 15       # quick perf test
-./benchmark quick ~/data/human.chr19.fasta 31 15 64    # 64-bit only
-./benchmark bench ~/data/human.chr19.fasta 31 15 out.txt  # full benchmark
+
+# Correctness tests (uses included 100kbp test file)
+./test test_100kbp.fasta 31 15
+
+# Quick performance benchmark
+./benchmark --quick ~/data/human.chr19.fasta 31 15
+./benchmark --quick ~/data/human.chr19.fasta 31 15 64    # 64-bit only
+
+# Full benchmark suite
+./benchmark ~/data/human.chr19.fasta 31 15 out.txt
 ```
 
 ## Optimization Notes
@@ -96,7 +97,7 @@ The fastest implementation uses the simd-minimizers approach:
 
 ### RESCAN Algorithm
 
-The 64-bit RESCAN approach provides exact results:
+The 64-bit Iterator uses the RESCAN algorithm internally:
 - O(1) amortized: only rescans window when minimum falls out (~6% of iterations)
 - Branch-free minimum update using conditional moves
 - Circular buffer with power-of-2 size for fast modulo
@@ -105,13 +106,12 @@ The 64-bit RESCAN approach provides exact results:
 
 | Implementation | Speed | Exact? | Use Case |
 |----------------|-------|--------|----------|
-| TWOSTACK (32-bit) | ~350-550 MB/s | ~99.99996% | High throughput |
-| RESCAN (64-bit) | ~140-210 MB/s | 100% | Exact results |
-| Iterator (64-bit) | ~145-160 MB/s | 100% | Incremental processing |
+| TWOSTACK (32-bit) | ~350-550 MB/s | ~99.99996% | High throughput, AVX2 required |
+| Iterator (64-bit) | ~145-160 MB/s | 100% | Exact results, scalar, portable |
 
 ## Notes
 
-- Different hash sizes (32/64/128-bit) produce different syncmer counts due to different tie-breaking
-- TWOSTACK is fastest but uses 16-bit hash approximation; use RESCAN for exact results
-- Iterator is ~75-80% of batch speed (inherent overhead from state save/restore)
-- Deprecated implementations (SIMD multiwindow) are archived in `misc/older/deprecated_simd_mw.h`
+- Different hash sizes (32/64-bit) produce different syncmer counts due to different tie-breaking
+- TWOSTACK is fastest but requires AVX2 and uses 16-bit hash approximation
+- Iterator is scalar (no SIMD) - works on any CPU including ARM
+- Deprecated implementations are archived in `misc/legacy/`

@@ -1,6 +1,6 @@
 # csyncmer_fast
 
-Header-only pure C library for fast closed syncmer detection using ntHash and AVX2 SIMD.
+Header-only pure C library for fast closed syncmer detection using forward-strand ntHash and AVX2 SIMD.
 
 ### Quick Start
 
@@ -57,7 +57,12 @@ A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains i
 
 **Iterator** (Scalar): Uses RESCAN algorithm internally - O(1) amortized, only rescans window when minimum falls out (~6% of iterations). Branch-free minimum update. Works on any CPU without SIMD.
 
-**ntHash Rolling Hash**: Both 32-bit and 64-bit variants. Uses direct ASCII lookup tables to skip 2-bit encoding overhead.
+**ntHash Rolling Hash**: Both 32-bit and 64-bit variants (forward-strand only, not canonical). Uses direct ASCII lookup tables to skip 2-bit encoding overhead.
+
+**Note on Hashing**: This library uses forward-strand ntHash only (not canonical).
+If you need strand-independent syncmers, you should either:
+- Process both strands separately
+- Use canonical implementations: `misc/legacy/syncmer_nthash128.hpp` or `misc/legacy/syncmer_seqhash.hpp` (slower)
 
 ### Project Structure
 

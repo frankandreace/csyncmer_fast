@@ -54,6 +54,119 @@ static inline void csyncmer_legacy_nthash64_init_ascii_to_idx(uint8_t table[256]
     table['G'] = table['g'] = 3;
 }
 
+// Reverse complement constants for canonical hashing
+// RC[base] = F[complement(base)]: A↔T, C↔G
+static const uint64_t CSYNCMER_LEGACY_NTHASH64_RC[4] = {
+    0x20323ed082572324ULL,  // RC[A] = F[T]
+    0x295549f54be24456ULL,  // RC[C] = F[G]
+    0x3c8bfbb395c60474ULL,  // RC[T] = F[A]
+    0x3193c18562a02b4cULL   // RC[G] = F[C]
+};
+
+static inline void csyncmer_legacy_nthash64_init_ascii_rc_table(uint64_t table[256]) {
+    memset(table, 0, 256 * sizeof(uint64_t));
+    table['A'] = table['a'] = CSYNCMER_LEGACY_NTHASH64_RC[0];
+    table['C'] = table['c'] = CSYNCMER_LEGACY_NTHASH64_RC[1];
+    table['T'] = table['t'] = CSYNCMER_LEGACY_NTHASH64_RC[2];
+    table['G'] = table['g'] = CSYNCMER_LEGACY_NTHASH64_RC[3];
+}
+
+// ============================================================================
+// 64-BIT CANONICAL DEQUE (REFERENCE IMPLEMENTATION)
+// ============================================================================
+
+/*
+ * Simple canonical 64-bit deque implementation for correctness verification.
+ * Computes all canonical hashes from scratch (slow), then uses deque for minima.
+ * This is a reference implementation - use the Iterator API for performance.
+ *
+ * Canonical hash = min(forward_hash, rc_hash) for each s-mer.
+ */
+static inline size_t csyncmer_compute_canonical_deque_64(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S,
+    size_t* num_syncmers
+) {
+    if (length < K || S == 0 || S >= K) {
+        *num_syncmers = 0;
+        return 0;
+    }
+
+    size_t num_s_mers = length - S + 1;
+    size_t window_size = K - S + 1;
+
+    // Initialize lookup tables
+    uint64_t F_ASCII[256];
+    uint64_t RC_ASCII[256];
+    csyncmer_legacy_nthash64_init_ascii_hash_table(F_ASCII);
+    csyncmer_legacy_nthash64_init_ascii_rc_table(RC_ASCII);
+
+    const uint8_t* seq = (const uint8_t*)sequence;
+
+    // Compute all canonical s-mer hashes from scratch
+    uint64_t* canon_hashes = (uint64_t*)malloc(num_s_mers * sizeof(uint64_t));
+    if (!canon_hashes) {
+        *num_syncmers = 0;
+        return 0;
+    }
+
+    for (size_t i = 0; i < num_s_mers; i++) {
+        // Forward hash: process left to right
+        uint64_t fw = 0;
+        for (size_t j = 0; j < S; j++) {
+            fw = csyncmer_legacy_nthash64_rotl7(fw) ^ F_ASCII[seq[i + j]];
+        }
+        // RC hash: process right to left with RC constants
+        uint64_t rc = 0;
+        for (size_t j = 0; j < S; j++) {
+            rc = csyncmer_legacy_nthash64_rotl7(rc) ^ RC_ASCII[seq[i + S - 1 - j]];
+        }
+        // Canonical = min
+        canon_hashes[i] = (fw <= rc) ? fw : rc;
+    }
+
+    // Use deque to find minimal s-mers in O(N)
+    size_t* deque = (size_t*)malloc(num_s_mers * sizeof(size_t));
+    if (!deque) {
+        free(canon_hashes);
+        *num_syncmers = 0;
+        return 0;
+    }
+
+    size_t front = 0, back = 0;
+    size_t syncmer_count = 0;
+
+    for (size_t i = 0; i < num_s_mers; i++) {
+        // Remove elements larger than current from back
+        while (back > front && canon_hashes[deque[back-1]] > canon_hashes[i]) {
+            back--;
+        }
+        deque[back++] = i;
+
+        // Remove elements outside window from front
+        if (i >= window_size && deque[front] <= i - window_size) {
+            front++;
+        }
+
+        // Check for closed syncmer condition
+        if (i >= window_size - 1) {
+            size_t min_pos = deque[front];
+            size_t kmer_pos = i - window_size + 1;
+            // Closed syncmer: minimum at first or last position in window
+            if (min_pos == kmer_pos || min_pos == kmer_pos + window_size - 1) {
+                syncmer_count++;
+            }
+        }
+    }
+
+    free(canon_hashes);
+    free(deque);
+    *num_syncmers = syncmer_count;
+    return syncmer_count;
+}
+
 // ============================================================================
 // 64-BIT SCALAR RESCAN (COUNT ONLY)
 // ============================================================================

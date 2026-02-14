@@ -416,17 +416,33 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
 
     if (run_64) {
         // Iterator benchmark (scalar, portable, exact)
-        clock_t start = clock();
-        num = 0;
-        size_t pos;
-        CsyncmerIterator64* it = csyncmer_iterator_create_64(sequence, length, K, S);
-        if (it) {
-            while (csyncmer_iterator_next_64(it, &pos)) num++;
-            csyncmer_iterator_destroy_64(it);
+        {
+            clock_t start = clock();
+            num = 0;
+            size_t pos;
+            CsyncmerIterator64* it = csyncmer_iterator_create_64(sequence, length, K, S);
+            if (it) {
+                while (csyncmer_iterator_next_64(it, &pos)) num++;
+                csyncmer_iterator_destroy_64(it);
+            }
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH64_ITERATOR_POS", num, file_size_mb / elapsed);
         }
-        double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-        printf("%-25s %10zu %12.2f\n", "NTH64_ITERATOR_POS", num, file_size_mb / elapsed);
 
+        // Canonical iterator benchmark (strand-independent, scalar, exact)
+        {
+            clock_t start = clock();
+            num = 0;
+            size_t pos;
+            int strand;
+            CsyncmerIteratorCanonical64* it = csyncmer_iterator_create_canonical_64(sequence, length, K, S);
+            if (it) {
+                while (csyncmer_iterator_next_canonical_64(it, &pos, &strand)) num++;
+                csyncmer_iterator_destroy_canonical_64(it);
+            }
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH64_CANONICAL_POS", num, file_size_mb / elapsed);
+        }
     }
 
     if (run_32) {

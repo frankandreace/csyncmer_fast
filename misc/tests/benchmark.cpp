@@ -218,87 +218,93 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
                          "SYNCMER_NTH32_DEQUE_FUSED\t"
                          "SYNCMER_NTH32_RESCAN_FUSED\t"
                          "SYNCMER_NTH32_RESCAN_SIMD\t"
-                         "SYNCMER_NTH32_VANHERK\n");
+                         "SYNCMER_NTH32_VANHERK\t"
+                         "SYNCMER_NTH64_ITER_POS\t"
+                         "SYNCMER_NTH64_CANON_POS\t"
+                         "SYNCMER_NTH32_TWOSTACK_COUNT\t"
+                         "SYNCMER_NTH32_TWOSTACK_POS\t"
+                         "SYNCMER_NTH32_CANON_TWOSTACK_COUNT\t"
+                         "SYNCMER_NTH32_CANON_TWOSTACK_POS\n");
     }
 
-    printf("[[HASHING SPEED BENCHMARK]]\n");
+    printf("[[HASHING syng]]\n");
     start_time = clock();
     hashing_speed_benchmark(sequence_input, sequence_input_length, K, S);
     end_time = clock();
     print_benchmark(hashing_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASHING SPEED BENCHMARK]]\n");
+    printf("[[HASHING nth128]]\n");
     start_time = clock();
     nthash_speed_benchmark(sequence_input, S);
     end_time = clock();
     print_benchmark(nt_hashing_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[GENERATOR - NTHASH]]\n");
+    printf("[[SYNCMERS nth128 iterator]]\n");
     start_time = clock();
     benchmark_syncmer_generator_nthash(sequence_input, K, S);
     end_time = clock();
     print_benchmark(nt_hashing_generator, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[DEQUE - NTHASH]]\n");
+    printf("[[SYNCMERS nth128 deque]]\n");
     start_time = clock();
     csyncmer_nthash128_deque(sequence_input, sequence_input_length, K, S);
     end_time = clock();
     print_benchmark(nt_hashing_deque, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NAIVE]]\n");
+    printf("[[SYNCMERS syng naive]]\n");
     start_time = clock();
     csyncmer_seqhash_naive(sequence_input, sequence_input_length, K, S, &num_syncmer_naive);
     end_time = clock();
     print_benchmark(naive_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[DEQUE]]\n");
+    printf("[[SYNCMERS syng deque]]\n");
     start_time = clock();
     csyncmer_seqhash_deque(sequence_input, sequence_input_length, K, S, &num_syncmer_deque);
     end_time = clock();
     print_benchmark(deque_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[SYNG ORIGINAL]]\n");
+    printf("[[SYNCMERS syng original]]\n");
     start_time = clock();
     compute_closed_syncmers_syng_original(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan);
     end_time = clock();
     print_benchmark(syng_original_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[RESCAN ITERATIVE]]\n");
+    printf("[[SYNCMERS syng rescan-array]]\n");
     start_time = clock();
     csyncmer_seqhash_rescan_array(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan);
     end_time = clock();
     print_benchmark(rescan_name2, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[RESCAN ITERATOR]]\n");
+    printf("[[SYNCMERS syng rescan-iterator]]\n");
     start_time = clock();
     benchmark_syncmer_generator_syng(sequence_input, sequence_input_length, K, S);
     end_time = clock();
     print_benchmark(syng_hashing_generator, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[RESCAN BRANCHLESS]]\n");
+    printf("[[SYNCMERS syng rescan-branchless]]\n");
     start_time = clock();
     csyncmer_seqhash_rescan_branchless(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan);
     end_time = clock();
     print_benchmark(branchless_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[RESCAN CIRCULAR ARRAY]]\n");
+    printf("[[SYNCMERS syng rescan-circular]]\n");
     start_time = clock();
     csyncmer_seqhash_rescan_circular(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan);
     end_time = clock();
     print_benchmark(rescan_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[RESCAN CIRCULAR ARRAY ITERATOR]]\n");
+    printf("[[SYNCMERS syng rescan-circular-iter]]\n");
     start_time = clock();
     csyncmer_seqhash_rescan_iterator(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan_iterator);
     end_time = clock();
@@ -308,56 +314,56 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
     // ntHash32 Benchmarks
     size_t num_nthash32_syncmer;
 
-    printf("[[NTHASH32 SCALAR]]\n");
+    printf("[[HASHING nth32 scalar]]\n");
     start_time = clock();
     benchmark_nthash32_2bit(sequence_input, S);
     end_time = clock();
     print_benchmark("NTH32_SCALAR", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 DIRECT]]\n");
+    printf("[[HASHING nth32 direct]]\n");
     start_time = clock();
     benchmark_nthash32_direct(sequence_input, S);
     end_time = clock();
     print_benchmark("NTH32_DIRECT", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 SIMD]]\n");
+    printf("[[HASHING nth32 simd]]\n");
     start_time = clock();
     benchmark_nthash32_simd(sequence_input, S);
     end_time = clock();
     print_benchmark("NTH32_SIMD", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 DIRECT RESCAN]]\n");
+    printf("[[SYNCMERS nth32 direct-rescan]]\n");
     start_time = clock();
     csyncmer_nthash32_direct_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_DIRECT_RESCAN", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 2BIT RESCAN]]\n");
+    printf("[[SYNCMERS nth32 2bit-rescan]]\n");
     start_time = clock();
     csyncmer_nthash32_2bit_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_2BIT_RESCAN", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 2BIT DEQUE]]\n");
+    printf("[[SYNCMERS nth32 2bit-deque]]\n");
     start_time = clock();
     csyncmer_nthash32_2bit_deque(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_2BIT_DEQUE", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 FUSED DEQUE]]\n");
+    printf("[[SYNCMERS nth32 fused-deque]]\n");
     start_time = clock();
     csyncmer_nthash32_fused_deque(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_FUSED_DEQUE", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
-    printf("[[NTHASH32 FUSED RESCAN]]\n");
+    printf("[[SYNCMERS nth32 fused-rescan]]\n");
     start_time = clock();
     csyncmer_nthash32_fused_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
@@ -365,22 +371,116 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
 #if defined(__AVX2__)
-    printf("[[NTHASH32 SIMD RESCAN]]\n");
+    printf("[[SYNCMERS nth32 simd-rescan]]\n");
     start_time = clock();
     csyncmer_nthash32_simd_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_SIMD_RESCAN", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 #else
-    printf("[[NTHASH32 SIMD RESCAN]] (skipped - no AVX2)\n");
+    printf("[[SYNCMERS nth32 simd-rescan]] (skipped - no AVX2)\n");
     if (filePtr != NULL) { fprintf(filePtr, "0\t"); }
 #endif
 
-    printf("[[NTHASH32 VAN HERK]]\n");
+    printf("[[SYNCMERS nth32 van-herk]]\n");
     start_time = clock();
     csyncmer_nthash32_vanherk(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_VANHERK", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    // ntHash64 iterator (scalar, portable, exact)
+    printf("[[SYNCMERS nth64 iterator-pos]]\n");
+    start_time = clock();
+    {
+        size_t num_iter = 0;
+        size_t pos;
+        CsyncmerIterator64* it = csyncmer_iterator_create_64(sequence_input, sequence_input_length, K, S);
+        if (it) {
+            while (csyncmer_iterator_next_64(it, &pos)) num_iter++;
+            csyncmer_iterator_destroy_64(it);
+        }
+        printf("[NTH64_ITERATOR_POS]:: COMPUTED %zu CLOSED SYNCMERS\n", num_iter);
+    }
+    end_time = clock();
+    print_benchmark("NTH64_ITERATOR_POS", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    // ntHash64 canonical iterator (strand-independent, scalar, exact)
+    printf("[[SYNCMERS nth64 canonical-pos]]\n");
+    start_time = clock();
+    {
+        size_t num_iter = 0;
+        size_t pos;
+        int strand;
+        CsyncmerIteratorCanonical64* it = csyncmer_iterator_create_canonical_64(sequence_input, sequence_input_length, K, S);
+        if (it) {
+            while (csyncmer_iterator_next_canonical_64(it, &pos, &strand)) num_iter++;
+            csyncmer_iterator_destroy_canonical_64(it);
+        }
+        printf("[NTH64_CANONICAL_POS]:: COMPUTED %zu CLOSED SYNCMERS\n", num_iter);
+    }
+    end_time = clock();
+    print_benchmark("NTH64_CANONICAL_POS", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+#if defined(__AVX2__)
+    // TWOSTACK SIMD count-only
+    printf("[[SYNCMERS nth32 twostack-count]]\n");
+    start_time = clock();
+    {
+        volatile size_t count = csyncmer_twostack_simd_32_count(sequence_input, sequence_input_length, K, S);
+        printf("[NTH32_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", (size_t)count);
+    }
+    end_time = clock();
+    print_benchmark("NTH32_TWOSTACK_COUNT", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    // TWOSTACK SIMD with position collection
+    printf("[[SYNCMERS nth32 twostack-pos]]\n");
+    {
+        size_t max_positions = sequence_input_length;
+        uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+        if (positions) {
+            start_time = clock();
+            size_t count = csyncmer_twostack_simd_32_positions(sequence_input, sequence_input_length, K, S, positions, max_positions);
+            end_time = clock();
+            printf("[NTH32_TWOSTACK_POS]:: COMPUTED %zu CLOSED SYNCMERS\n", count);
+            print_benchmark("NTH32_TWOSTACK_POS", start_time, end_time, fasta_filename, filePtr);
+            free(positions);
+        }
+    }
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    // Canonical TWOSTACK SIMD count-only
+    printf("[[SYNCMERS nth32 canonical-twostack-count]]\n");
+    start_time = clock();
+    {
+        volatile size_t count = csyncmer_twostack_simd_32_canonical_count(sequence_input, sequence_input_length, K, S);
+        printf("[NTH32_CANON_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", (size_t)count);
+    }
+    end_time = clock();
+    print_benchmark("NTH32_CANON_TWOSTACK_COUNT", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    // Canonical TWOSTACK SIMD with position and strand collection
+    printf("[[SYNCMERS nth32 canonical-twostack-pos]]\n");
+    {
+        size_t max_positions = sequence_input_length;
+        uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+        uint8_t* strands = (uint8_t*)aligned_alloc(32, max_positions);
+        if (positions && strands) {
+            start_time = clock();
+            size_t count = csyncmer_twostack_simd_32_canonical_positions(
+                sequence_input, sequence_input_length, K, S, positions, strands, max_positions);
+            end_time = clock();
+            printf("[NTH32_CANON_TWOSTACK_POS]:: COMPUTED %zu CLOSED SYNCMERS\n", count);
+            print_benchmark("NTH32_CANON_TWOSTACK_POS", start_time, end_time, fasta_filename, filePtr);
+        }
+        free(positions);
+        free(strands);
+    }
+#endif
 
     if (filePtr != NULL) { fprintf(filePtr, "\n"); }
 

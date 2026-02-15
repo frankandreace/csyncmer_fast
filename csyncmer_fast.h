@@ -84,7 +84,202 @@ static inline void csyncmer_init_ascii_to_idx(uint8_t table[256]) {
 
 // ============================================================================
 // Scalar Implementation: Fused RESCAN with Branch-free Updates
+// Macro-generated for forward (CANONICAL=0) and canonical (CANONICAL=1) variants.
+// Count vs positions handled via runtime if(out_positions) — compiler eliminates
+// the branch when inlined with NULL.
 // ============================================================================
+
+static inline uint32_t csyncmer_rotr7_32(uint32_t x) {
+    return (x >> 7) | (x << 25);
+}
+
+#define CSYNCMER_DEFINE_RESCAN_32(FUNC_NAME, CANONICAL)                        \
+static inline size_t FUNC_NAME(                                                \
+    const char* sequence,                                                      \
+    size_t length,                                                             \
+    size_t K,                                                                  \
+    size_t S,                                                                  \
+    uint32_t* out_positions,                                                   \
+    uint8_t* out_strands,                                                      \
+    size_t max_positions                                                        \
+) {                                                                            \
+    if (!sequence || length < K || S == 0 || S >= K) {                         \
+        return 0;                                                              \
+    }                                                                          \
+    if (out_positions && max_positions == 0) return 0;                          \
+                                                                               \
+    /* Initialize lookup tables */                                             \
+    uint32_t F_ASCII[256];                                                     \
+    uint8_t IDX_ASCII[256];                                                    \
+    uint32_t f_rot[4];                                                         \
+    csyncmer_init_ascii_hash_table(F_ASCII);                                   \
+    csyncmer_init_ascii_to_idx(IDX_ASCII);                                     \
+    csyncmer_make_f_rot_32(S, f_rot);                                          \
+                                                                               \
+    /* Canonical-only: RC rotation tables */                                   \
+    uint32_t c_rot[4];                                                         \
+    uint32_t RC32[4];                                                          \
+    uint32_t RC32_ROTR7[4];                                                    \
+    if (CANONICAL) {                                                           \
+        uint32_t rot = (uint32_t)(((S - 1) * 7) & 31);                        \
+        RC32[0] = 0x82572324; RC32[1] = 0x4be24456;                            \
+        RC32[2] = 0x95c60474; RC32[3] = 0x62a02b4c;                            \
+        RC32_ROTR7[0] = 0x4904ae46; RC32_ROTR7[1] = 0xac97c488;               \
+        RC32_ROTR7[2] = 0xe92b8c08; RC32_ROTR7[3] = 0x98c54056;              \
+        for (int ci = 0; ci < 4; ci++) {                                       \
+            c_rot[ci] = rot ? ((RC32[ci] << rot) | (RC32[ci] >> (32 - rot))) : RC32[ci]; \
+        }                                                                      \
+    } else {                                                                   \
+        (void)c_rot; (void)RC32; (void)RC32_ROTR7;                            \
+    }                                                                          \
+                                                                               \
+    size_t window_size = K - S + 1;                                            \
+    size_t num_smers = length - S + 1;                                         \
+    const uint8_t* seq = (const uint8_t*)sequence;                             \
+                                                                               \
+    /* Power-of-2 circular buffer */                                           \
+    size_t buf_size = 1;                                                       \
+    while (buf_size < window_size) buf_size <<= 1;                             \
+    size_t buf_mask = buf_size - 1;                                            \
+    uint32_t* hash_buffer = (uint32_t*)malloc(buf_size * sizeof(uint32_t));     \
+    if (!hash_buffer) return 0;                                                \
+                                                                               \
+    size_t syncmer_count = 0;                                                  \
+                                                                               \
+    /* First s-mer hash (forward) */                                           \
+    uint32_t fw_hash = 0;                                                      \
+    for (size_t j = 0; j < S; ++j) {                                           \
+        fw_hash = csyncmer_rotl7_32(fw_hash) ^ F_ASCII[seq[j]];               \
+    }                                                                          \
+                                                                               \
+    /* Canonical: also compute RC hash for first s-mer */                      \
+    uint32_t rc_hash = 0;                                                      \
+    if (CANONICAL) {                                                           \
+        for (size_t j = 0; j < S; ++j) {                                       \
+            rc_hash = csyncmer_rotl7_32(rc_hash) ^ RC32[IDX_ASCII[seq[S - 1 - j]]]; \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    uint32_t effective_hash = fw_hash;                                         \
+    if (CANONICAL) {                                                           \
+        effective_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;             \
+    }                                                                          \
+    hash_buffer[0] = effective_hash;                                           \
+                                                                               \
+    /* Rolling state for forward */                                            \
+    uint32_t fw = fw_hash ^ f_rot[IDX_ASCII[seq[0]]];                         \
+                                                                               \
+    /* Fill initial window */                                                  \
+    for (size_t i = 1; i < window_size; ++i) {                                 \
+        uint8_t new_last = seq[i + S - 1];                                     \
+        uint8_t new_first = seq[i];                                            \
+                                                                               \
+        /* Forward rolling */                                                  \
+        fw_hash = csyncmer_rotl7_32(fw) ^ F_ASCII[new_last];                   \
+        fw = fw_hash ^ f_rot[IDX_ASCII[new_first]];                           \
+                                                                               \
+        if (CANONICAL) {                                                       \
+            /* RC rolling: rc = rotr7(rc) ^ rotr7(RC[old_first]) ^ c_rot[new_last] */ \
+            uint8_t old_first = seq[i - 1];                                    \
+            uint8_t idx_old = IDX_ASCII[old_first];                            \
+            uint8_t idx_new = IDX_ASCII[new_last];                             \
+            rc_hash = csyncmer_rotr7_32(rc_hash) ^ RC32_ROTR7[idx_old] ^ c_rot[idx_new]; \
+            effective_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;         \
+        } else {                                                               \
+            effective_hash = fw_hash;                                          \
+        }                                                                      \
+        hash_buffer[i & buf_mask] = effective_hash;                            \
+    }                                                                          \
+                                                                               \
+    /* Find minimum in first window */                                         \
+    uint32_t min_hash = UINT32_MAX;                                            \
+    size_t min_pos = 0;                                                        \
+    for (size_t i = 0; i < window_size; ++i) {                                 \
+        if (hash_buffer[i] < min_hash) {                                       \
+            min_hash = hash_buffer[i];                                         \
+            min_pos = i;                                                       \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    /* Check first k-mer */                                                    \
+    if (min_pos == 0 || min_pos == window_size - 1) {                          \
+        if (out_positions) {                                                   \
+            out_positions[syncmer_count] = 0;                                  \
+            if (CANONICAL && out_strands) {                                    \
+                out_strands[syncmer_count] = 0; /* strand not tracked in rescan */ \
+            }                                                                  \
+        }                                                                      \
+        syncmer_count++;                                                       \
+        if (out_positions && syncmer_count >= max_positions) {                  \
+            free(hash_buffer);                                                 \
+            return syncmer_count;                                              \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    /* Main loop with branch-free min update */                                \
+    for (size_t kmer_idx = 1; kmer_idx < num_smers - window_size + 1; ++kmer_idx) { \
+        size_t i = kmer_idx + window_size - 1;                                 \
+        uint8_t new_last = seq[i + S - 1];                                     \
+        uint8_t new_first = seq[i];                                            \
+                                                                               \
+        /* Forward rolling */                                                  \
+        fw_hash = csyncmer_rotl7_32(fw) ^ F_ASCII[new_last];                   \
+        fw = fw_hash ^ f_rot[IDX_ASCII[new_first]];                           \
+                                                                               \
+        if (CANONICAL) {                                                       \
+            uint8_t old_first = seq[i - 1];                                    \
+            uint8_t idx_old = IDX_ASCII[old_first];                            \
+            uint8_t idx_new = IDX_ASCII[new_last];                             \
+            rc_hash = csyncmer_rotr7_32(rc_hash) ^ RC32_ROTR7[idx_old] ^ c_rot[idx_new]; \
+            effective_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;         \
+        } else {                                                               \
+            effective_hash = fw_hash;                                          \
+        }                                                                      \
+        hash_buffer[i & buf_mask] = effective_hash;                            \
+                                                                               \
+        /* RESCAN: update minimum */                                           \
+        if (min_pos < kmer_idx) {                                              \
+            min_hash = UINT32_MAX;                                             \
+            for (size_t j = kmer_idx; j <= i; ++j) {                           \
+                uint32_t h = hash_buffer[j & buf_mask];                        \
+                if (h < min_hash) {                                            \
+                    min_hash = h;                                              \
+                    min_pos = j;                                               \
+                }                                                              \
+            }                                                                  \
+        } else {                                                               \
+            if (effective_hash < min_hash) {                                   \
+                min_hash = effective_hash;                                      \
+                min_pos = i;                                                   \
+            }                                                                  \
+        }                                                                      \
+                                                                               \
+        /* Check closed syncmer condition */                                   \
+        size_t min_offset = min_pos - kmer_idx;                                \
+        if (min_offset == 0 || min_offset == window_size - 1) {                \
+            if (out_positions) {                                               \
+                out_positions[syncmer_count] = (uint32_t)kmer_idx;             \
+                if (CANONICAL && out_strands) {                                \
+                    out_strands[syncmer_count] = 0;                            \
+                }                                                              \
+            }                                                                  \
+            syncmer_count++;                                                   \
+            if (out_positions && syncmer_count >= max_positions) {              \
+                free(hash_buffer);                                             \
+                return syncmer_count;                                          \
+            }                                                                  \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    free(hash_buffer);                                                         \
+    return syncmer_count;                                                      \
+}
+
+/* Generate forward and canonical RESCAN internal functions */
+CSYNCMER_DEFINE_RESCAN_32(csyncmer_rescan_32_, 0)
+CSYNCMER_DEFINE_RESCAN_32(csyncmer_canonical_rescan_32_, 1)
+
+/* Public API wrappers preserving existing signatures */
 
 static inline size_t csyncmer_rescan_32_count(
     const char* sequence,
@@ -93,106 +288,11 @@ static inline size_t csyncmer_rescan_32_count(
     size_t S,
     size_t* num_syncmers
 ) {
-    if (!sequence || length < K || S == 0 || S >= K) {
-        *num_syncmers = 0;
-        return 0;
-    }
-
-    // Initialize lookup tables
-    uint32_t F_ASCII[256];
-    uint8_t IDX_ASCII[256];
-    uint32_t f_rot[4];
-    csyncmer_init_ascii_hash_table(F_ASCII);
-    csyncmer_init_ascii_to_idx(IDX_ASCII);
-    csyncmer_make_f_rot_32(S, f_rot);
-
-    size_t window_size = K - S + 1;
-    size_t num_smers = length - S + 1;
-
-    const uint8_t* seq = (const uint8_t*)sequence;
-
-    // Power-of-2 circular buffer
-    size_t buf_size = 1;
-    while (buf_size < window_size) buf_size <<= 1;
-    size_t buf_mask = buf_size - 1;
-    uint32_t* hash_buffer = (uint32_t*)malloc(buf_size * sizeof(uint32_t));
-    if (!hash_buffer) {
-        *num_syncmers = 0;
-        return 0;
-    }
-
-    size_t syncmer_count = 0;
-
-    // First hash - compute directly
-    uint32_t hash = 0;
-    for (size_t j = 0; j < S; ++j) {
-        hash = csyncmer_rotl7_32(hash) ^ F_ASCII[seq[j]];
-    }
-    uint32_t fw = hash ^ f_rot[IDX_ASCII[seq[0]]];  // State uses first base of s-mer
-    hash_buffer[0] = hash;
-
-    // Fill initial window
-    for (size_t i = 1; i < window_size; ++i) {
-        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
-        fw = hash ^ f_rot[IDX_ASCII[seq[i]]];  // Use new first base
-        hash_buffer[i & buf_mask] = hash;
-    }
-
-    // Find minimum in first window
-    uint32_t min_hash = UINT32_MAX;
-    size_t min_pos = 0;
-    for (size_t i = 0; i < window_size; ++i) {
-        if (hash_buffer[i] < min_hash) {
-            min_hash = hash_buffer[i];
-            min_pos = i;
-        }
-    }
-
-    // Check first k-mer
-    if (min_pos == 0 || min_pos == window_size - 1) {
-        syncmer_count++;
-    }
-
-    // Main loop with branch-free min update
-    for (size_t kmer_idx = 1; kmer_idx < num_smers - window_size + 1; ++kmer_idx) {
-        size_t i = kmer_idx + window_size - 1;
-
-        // Compute new hash
-        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
-        fw = hash ^ f_rot[IDX_ASCII[seq[i]]];  // Use new first base
-        hash_buffer[i & buf_mask] = hash;
-
-        // RESCAN: update minimum
-        if (min_pos < kmer_idx) {
-            // Minimum fell out - rescan
-            min_hash = UINT32_MAX;
-            for (size_t j = kmer_idx; j <= i; ++j) {
-                uint32_t h = hash_buffer[j & buf_mask];
-                if (h < min_hash) {
-                    min_hash = h;
-                    min_pos = j;
-                }
-            }
-        } else {
-            // Branch-free update using conditional moves
-            uint32_t is_smaller = (hash < min_hash) ? 1 : 0;
-            min_hash = is_smaller ? hash : min_hash;
-            min_pos = is_smaller ? i : min_pos;
-        }
-
-        // Check closed syncmer condition
-        size_t min_offset = min_pos - kmer_idx;
-        if (min_offset == 0 || min_offset == window_size - 1) {
-            syncmer_count++;
-        }
-    }
-
-    free(hash_buffer);
-    *num_syncmers = syncmer_count;
-    return syncmer_count;
+    size_t c = csyncmer_rescan_32_(sequence, length, K, S, NULL, NULL, 0);
+    if (num_syncmers) *num_syncmers = c;
+    return c;
 }
 
-// RESCAN variant that outputs positions (used as TWOSTACK fallback)
 static inline size_t csyncmer_rescan_32_positions(
     const char* sequence,
     size_t length,
@@ -201,101 +301,28 @@ static inline size_t csyncmer_rescan_32_positions(
     uint32_t* out_positions,
     size_t max_positions
 ) {
-    if (!sequence || length < K || S == 0 || S >= K || max_positions == 0) {
-        return 0;
-    }
+    return csyncmer_rescan_32_(sequence, length, K, S, out_positions, NULL, max_positions);
+}
 
-    uint32_t F_ASCII[256];
-    uint8_t IDX_ASCII[256];
-    uint32_t f_rot[4];
-    csyncmer_init_ascii_hash_table(F_ASCII);
-    csyncmer_init_ascii_to_idx(IDX_ASCII);
-    csyncmer_make_f_rot_32(S, f_rot);
+static inline size_t csyncmer_canonical_rescan_32_count(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S
+) {
+    return csyncmer_canonical_rescan_32_(sequence, length, K, S, NULL, NULL, 0);
+}
 
-    size_t window_size = K - S + 1;
-    size_t num_smers = length - S + 1;
-
-    const uint8_t* seq = (const uint8_t*)sequence;
-
-    size_t buf_size = 1;
-    while (buf_size < window_size) buf_size <<= 1;
-    size_t buf_mask = buf_size - 1;
-    uint32_t* hash_buffer = (uint32_t*)malloc(buf_size * sizeof(uint32_t));
-    if (!hash_buffer) {
-        return 0;
-    }
-
-    size_t write_idx = 0;
-
-    // First hash
-    uint32_t hash = 0;
-    for (size_t j = 0; j < S; ++j) {
-        hash = csyncmer_rotl7_32(hash) ^ F_ASCII[seq[j]];
-    }
-    uint32_t fw = hash ^ f_rot[IDX_ASCII[seq[0]]];
-    hash_buffer[0] = hash;
-
-    // Fill initial window
-    for (size_t i = 1; i < window_size; ++i) {
-        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
-        fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
-        hash_buffer[i & buf_mask] = hash;
-    }
-
-    // Find minimum in first window
-    uint32_t min_hash = UINT32_MAX;
-    size_t min_pos = 0;
-    for (size_t i = 0; i < window_size; ++i) {
-        if (hash_buffer[i] < min_hash) {
-            min_hash = hash_buffer[i];
-            min_pos = i;
-        }
-    }
-
-    // Check first k-mer
-    if (min_pos == 0 || min_pos == window_size - 1) {
-        out_positions[write_idx++] = 0;
-        if (write_idx >= max_positions) {
-            free(hash_buffer);
-            return write_idx;
-        }
-    }
-
-    // Main loop
-    for (size_t kmer_idx = 1; kmer_idx < num_smers - window_size + 1; ++kmer_idx) {
-        size_t i = kmer_idx + window_size - 1;
-
-        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
-        fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
-        hash_buffer[i & buf_mask] = hash;
-
-        if (min_pos < kmer_idx) {
-            min_hash = UINT32_MAX;
-            for (size_t j = kmer_idx; j <= i; ++j) {
-                uint32_t h = hash_buffer[j & buf_mask];
-                if (h < min_hash) {
-                    min_hash = h;
-                    min_pos = j;
-                }
-            }
-        } else {
-            uint32_t is_smaller = (hash < min_hash) ? 1 : 0;
-            min_hash = is_smaller ? hash : min_hash;
-            min_pos = is_smaller ? i : min_pos;
-        }
-
-        size_t min_offset = min_pos - kmer_idx;
-        if (min_offset == 0 || min_offset == window_size - 1) {
-            out_positions[write_idx++] = (uint32_t)kmer_idx;
-            if (write_idx >= max_positions) {
-                free(hash_buffer);
-                return write_idx;
-            }
-        }
-    }
-
-    free(hash_buffer);
-    return write_idx;
+static inline size_t csyncmer_canonical_rescan_32_positions(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S,
+    uint32_t* out_positions,
+    uint8_t* out_strands,
+    size_t max_positions
+) {
+    return csyncmer_canonical_rescan_32_(sequence, length, K, S, out_positions, out_strands, max_positions);
 }
 
 // ============================================================================
@@ -1114,13 +1141,555 @@ static inline size_t csyncmer_append_filtered(
     return write_idx + num;
 }
 
+
 // Optimized two-stack with SIMD hash computation (32-bit hash, 8 parallel lanes)
+// Macro-generated for forward/canonical and count/positions variants.
+//
 // LIMITATIONS:
 // - Uses 16-bit hash packing, causing ~0.00004% discrepancy vs reference when
 //   two s-mer hashes have identical upper 16 bits.
 // - Falls back to scalar RESCAN when window_size > 64 (i.e., K - S + 1 > 64).
 // For exact results, use csyncmer_rescan_32_count() or the 64-bit
 // iterator API (csyncmer_iterator_*_64).
+
+#define CSYNCMER_DEFINE_TWOSTACK_SIMD_32(FUNC_NAME, CANONICAL, COLLECT_POSITIONS) \
+static inline size_t FUNC_NAME(                                                \
+    const char* sequence,                                                      \
+    size_t length,                                                             \
+    size_t K,                                                                  \
+    size_t S,                                                                  \
+    uint32_t* out_positions,                                                   \
+    uint8_t* out_strands,                                                      \
+    size_t max_positions                                                        \
+) {                                                                            \
+    if (!sequence || length < K || S == 0 || S >= K) return 0;                 \
+    if (COLLECT_POSITIONS && max_positions == 0) return 0;                      \
+                                                                               \
+    size_t window_size = K - S + 1;                                            \
+    size_t num_smers = length - S + 1;                                         \
+    size_t num_kmers = num_smers - window_size + 1;                            \
+                                                                               \
+    /* Fall back to scalar for small inputs or large windows */                \
+    if (num_kmers < 64 || window_size > 64) {                                 \
+        if (CANONICAL) {                                                       \
+            if (COLLECT_POSITIONS) {                                           \
+                return csyncmer_canonical_rescan_32_(                           \
+                    sequence, length, K, S, out_positions, out_strands,         \
+                    max_positions);                                             \
+            } else {                                                           \
+                return csyncmer_canonical_rescan_32_(                           \
+                    sequence, length, K, S, NULL, NULL, 0);                    \
+            }                                                                  \
+        } else {                                                               \
+            if (COLLECT_POSITIONS) {                                           \
+                return csyncmer_rescan_32_(                                     \
+                    sequence, length, K, S, out_positions, NULL, max_positions);\
+            } else {                                                           \
+                return csyncmer_rescan_32_(                                     \
+                    sequence, length, K, S, NULL, NULL, 0);                    \
+            }                                                                  \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    /* Phase 1: Pack sequence to 2-bit representation */                       \
+    size_t packed_size = (length + 3) / 4 + 32;                                \
+    uint8_t* packed = (uint8_t*)aligned_alloc(32, packed_size);                \
+    if (!packed) return 0;                                                     \
+    memset(packed, 0, packed_size);                                            \
+    csyncmer_pack_seq_2bit(sequence, length, packed);                          \
+                                                                               \
+    /* Phase 2: Calculate chunk parameters */                                  \
+    size_t chunk_len = (num_kmers + 7) / 8;                                    \
+    chunk_len = ((chunk_len + 3) / 4) * 4;                                     \
+    size_t bytes_per_chunk = chunk_len / 4;                                    \
+    size_t max_iter = chunk_len + window_size - 1 + S - 1;                     \
+                                                                               \
+    alignas(32) uint32_t chunk_starts[8];                                      \
+    alignas(32) uint32_t chunk_ends[8];                                        \
+    for (int i = 0; i < 8; i++) {                                              \
+        chunk_starts[i] = (uint32_t)(i * chunk_len);                           \
+        chunk_ends[i] = (uint32_t)((i + 1) * chunk_len);                      \
+        if (chunk_ends[i] > num_kmers) chunk_ends[i] = (uint32_t)num_kmers;   \
+    }                                                                          \
+                                                                               \
+    /* Thread-local lane buffers (unique per expansion via ##) */              \
+    static CSYNCMER_THREAD_LOCAL uint32_t* ts_pos_bufs_##FUNC_NAME[8];        \
+    static CSYNCMER_THREAD_LOCAL uint8_t* ts_str_bufs_##FUNC_NAME[8];         \
+    static CSYNCMER_THREAD_LOCAL size_t ts_buf_cap_##FUNC_NAME[8];            \
+    static CSYNCMER_THREAD_LOCAL int ts_init_##FUNC_NAME;                     \
+    size_t lane_counts[8] = {0};                                               \
+    size_t max_per_lane = chunk_len + 64;                                      \
+                                                                               \
+    if (COLLECT_POSITIONS) {                                                   \
+        if (!ts_init_##FUNC_NAME) {                                            \
+            memset(ts_pos_bufs_##FUNC_NAME, 0, sizeof(ts_pos_bufs_##FUNC_NAME)); \
+            memset(ts_str_bufs_##FUNC_NAME, 0, sizeof(ts_str_bufs_##FUNC_NAME)); \
+            memset(ts_buf_cap_##FUNC_NAME, 0, sizeof(ts_buf_cap_##FUNC_NAME));\
+            ts_init_##FUNC_NAME = 1;                                           \
+        }                                                                      \
+        for (int i = 0; i < 8; i++) {                                          \
+            if (ts_buf_cap_##FUNC_NAME[i] < max_per_lane) {                   \
+                free(ts_pos_bufs_##FUNC_NAME[i]);                              \
+                ts_pos_bufs_##FUNC_NAME[i] = (uint32_t*)aligned_alloc(         \
+                    32, max_per_lane * sizeof(uint32_t));                       \
+                if (!ts_pos_bufs_##FUNC_NAME[i]) {                             \
+                    ts_buf_cap_##FUNC_NAME[i] = 0;                             \
+                    free(packed); return 0;                                     \
+                }                                                              \
+                if (CANONICAL) {                                               \
+                    free(ts_str_bufs_##FUNC_NAME[i]);                          \
+                    ts_str_bufs_##FUNC_NAME[i] = (uint8_t*)aligned_alloc(      \
+                        32, max_per_lane);                                     \
+                    if (!ts_str_bufs_##FUNC_NAME[i]) {                         \
+                        free(ts_pos_bufs_##FUNC_NAME[i]);                      \
+                        ts_pos_bufs_##FUNC_NAME[i] = NULL;                     \
+                        ts_buf_cap_##FUNC_NAME[i] = 0;                         \
+                        free(packed); return 0;                                \
+                    }                                                          \
+                }                                                              \
+                ts_buf_cap_##FUNC_NAME[i] = max_per_lane;                      \
+            }                                                                  \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    size_t syncmer_count = 0;                                                  \
+                                                                               \
+    /* Phase 3: Initialize SIMD state */                                       \
+    __m256i f_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_F32);    \
+                                                                               \
+    uint32_t rot = ((S - 1) * 7) & 31;                                        \
+    alignas(32) uint32_t f_rot_arr[8];                                         \
+    for (int i = 0; i < 8; i++) {                                              \
+        uint32_t x = CSYNCMER_SIMD_F32[i];                                    \
+        f_rot_arr[i] = (x << rot) | (x >> (32 - rot));                        \
+    }                                                                          \
+    __m256i f_rot_table = _mm256_load_si256((const __m256i*)f_rot_arr);        \
+                                                                               \
+    /* Canonical: RC tables */                                                 \
+    __m256i rc_table_v = _mm256_setzero_si256();                               \
+    __m256i rc_rotr7_table = _mm256_setzero_si256();                           \
+    __m256i c_rot_table = _mm256_setzero_si256();                              \
+    if (CANONICAL) {                                                           \
+        rc_table_v = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_RC32);    \
+        rc_rotr7_table = _mm256_load_si256(                                    \
+            (const __m256i*)CSYNCMER_SIMD_RC32_ROTR7);                        \
+        alignas(32) uint32_t c_rot_arr[8];                                     \
+        for (int i = 0; i < 8; i++) {                                          \
+            uint32_t cx = CSYNCMER_SIMD_RC32[i];                               \
+            c_rot_arr[i] = (cx << rot) | (cx >> (32 - rot));                   \
+        }                                                                      \
+        c_rot_table = _mm256_load_si256((const __m256i*)c_rot_arr);            \
+    }                                                                          \
+                                                                               \
+    __m256i fw = _mm256_setzero_si256();                                       \
+    __m256i rc = _mm256_setzero_si256();                                       \
+    __m256i prev_remove_base = _mm256_setzero_si256();                         \
+                                                                               \
+    /* Delay buffer */                                                         \
+    size_t delay_size = 1;                                                     \
+    while (delay_size < S) delay_size *= 2;                                    \
+    size_t delay_mask = delay_size - 1;                                        \
+    __m256i* delay_buf = (__m256i*)aligned_alloc(32,                           \
+        delay_size * sizeof(__m256i));                                         \
+    if (!delay_buf) { free(packed); return 0; }                                \
+    for (size_t i = 0; i < delay_size; i++)                                    \
+        delay_buf[i] = _mm256_setzero_si256();                                \
+    size_t wr_idx = 0, rd_idx = 0;                                            \
+                                                                               \
+    /* Two-stack: [hash upper 16 bits][position lower 16 bits] */              \
+    alignas(32) __m256i ring_buf[64];                                          \
+    for (size_t i = 0; i < window_size; i++)                                   \
+        ring_buf[i] = _mm256_set1_epi32((int)UINT32_MAX);                     \
+    __m256i prefix_min = _mm256_set1_epi32((int)UINT32_MAX);                   \
+    __m256i val_mask = _mm256_set1_epi32((int)0xFFFF0000);                     \
+    __m256i pos_mask = _mm256_set1_epi32(0x0000FFFF);                          \
+                                                                               \
+    /* Canonical + positions: strand tracking */                               \
+    alignas(32) uint8_t strand_ring[64];                                       \
+    uint8_t prefix_strand = 0;                                                 \
+    if (CANONICAL && COLLECT_POSITIONS) {                                       \
+        for (size_t i = 0; i < window_size; i++) strand_ring[i] = 0;          \
+    }                                                                          \
+                                                                               \
+    size_t ring_idx = 0;                                                       \
+    uint32_t pos = 0;                                                          \
+    uint32_t pos_offset = 0;                                                   \
+    __m256i pos_offset_vec = _mm256_setzero_si256();                           \
+    const uint32_t max_pos_val = 0xFFFF;                                       \
+                                                                               \
+    /* Batch buffer for transpose (positions only, but declare always) */      \
+    alignas(32) __m256i batch_pos[8];                                          \
+    alignas(32) uint8_t batch_strand[8];                                       \
+    size_t batch_count = 0;                                                    \
+    size_t batch_base_kmer = 0;                                                \
+    alignas(32) uint32_t idx_arr[8] = {0, 1, 2, 3, 4, 5, 6, 7};              \
+    __m256i idx_offsets = _mm256_load_si256((const __m256i*)idx_arr);           \
+    __m256i w_minus_1_vec = _mm256_set1_epi32((int)(window_size - 1));         \
+                                                                               \
+    __m256i mask_2bit = _mm256_set1_epi32(0x03);                               \
+    alignas(32) int32_t gather_base[8];                                        \
+    for (int i = 0; i < 8; i++)                                                \
+        gather_base[i] = (int32_t)(i * bytes_per_chunk);                       \
+    __m256i gather_base_vec = _mm256_load_si256((const __m256i*)gather_base);   \
+                                                                               \
+    /* Validity threshold */                                                   \
+    size_t last_lane_limit;                                                    \
+    if (CANONICAL) {                                                           \
+        last_lane_limit = chunk_len;                                           \
+        for (int i = 0; i < 8; i++) {                                          \
+            if (chunk_ends[i] > chunk_starts[i]) {                             \
+                size_t ll = chunk_ends[i] - chunk_starts[i];                   \
+                if (ll < last_lane_limit) last_lane_limit = ll;                \
+            } else { last_lane_limit = 0; }                                    \
+        }                                                                      \
+    } else {                                                                   \
+        last_lane_limit = chunk_ends[7] - chunk_starts[7];                     \
+    }                                                                          \
+                                                                               \
+    __m256i cur_data = _mm256_setzero_si256();                                 \
+    size_t buf_pos = 16;                                                       \
+    size_t seq_pos = 0;                                                        \
+                                                                               \
+    /* === MAIN LOOP === */                                                    \
+    for (size_t iter = 0; iter < max_iter; iter++) {                           \
+        if (buf_pos >= 16) {                                                   \
+            size_t byte_offset = seq_pos / 4;                                  \
+            __m256i byte_off_vec = _mm256_set1_epi32((int32_t)byte_offset);    \
+            __m256i bv_idx = _mm256_add_epi32(gather_base_vec, byte_off_vec);  \
+            cur_data = _mm256_i32gather_epi32((const int*)packed, bv_idx, 1);  \
+            buf_pos = seq_pos % 16;                                            \
+        }                                                                      \
+        __m256i add_base = _mm256_and_si256(                                   \
+            _mm256_srli_epi32(cur_data, (int)(buf_pos * 2)), mask_2bit);       \
+        buf_pos++;                                                             \
+        seq_pos++;                                                             \
+                                                                               \
+        __m256i remove_base = delay_buf[rd_idx];                               \
+        delay_buf[wr_idx] = add_base;                                          \
+        wr_idx = (wr_idx + 1) & delay_mask;                                    \
+        if (iter >= S - 1) rd_idx = (rd_idx + 1) & delay_mask;                \
+                                                                               \
+        /* Forward hash */                                                     \
+        __m256i fw_rotated = csyncmer_simd_rotl7(fw);                          \
+        __m256i add_hash_fw = csyncmer_simd_lookup(f_table, add_base);         \
+        __m256i fw_hash = _mm256_xor_si256(fw_rotated, add_hash_fw);           \
+                                                                               \
+        __m256i hash_out;                                                      \
+        uint8_t strand_mask = 0;                                               \
+                                                                               \
+        if (CANONICAL) {                                                       \
+            __m256i rc_hash;                                                   \
+            if (iter < S - 1) {                                                \
+                fw = fw_hash;                                                  \
+                prev_remove_base = remove_base;                                \
+                continue;                                                      \
+            } else if (iter == S - 1) {                                        \
+                rc = _mm256_setzero_si256();                                   \
+                for (size_t j = 0; j < S; j++) {                               \
+                    size_t bi = (S - 1 - j) & delay_mask;                     \
+                    __m256i bj = delay_buf[bi];                                \
+                    __m256i rv = csyncmer_simd_lookup(rc_table_v, bj);         \
+                    rc = _mm256_xor_si256(csyncmer_simd_rotl7(rc), rv);       \
+                }                                                              \
+                rc_hash = rc;                                                  \
+                __m256i fw_rm = csyncmer_simd_lookup(f_rot_table, remove_base);\
+                fw = _mm256_xor_si256(fw_hash, fw_rm);                        \
+                prev_remove_base = remove_base;                                \
+            } else {                                                           \
+                __m256i rc_rotr = csyncmer_simd_rotr7(rc);                     \
+                __m256i rc_rm = csyncmer_simd_lookup(                          \
+                    rc_rotr7_table, prev_remove_base);                         \
+                __m256i rc_ad = csyncmer_simd_lookup(c_rot_table, add_base);   \
+                rc_hash = _mm256_xor_si256(                                    \
+                    _mm256_xor_si256(rc_rotr, rc_rm), rc_ad);                 \
+                __m256i fw_rm = csyncmer_simd_lookup(f_rot_table, remove_base);\
+                fw = _mm256_xor_si256(fw_hash, fw_rm);                        \
+                rc = rc_hash;                                                  \
+                prev_remove_base = remove_base;                                \
+            }                                                                  \
+            hash_out = _mm256_min_epu32(fw_hash, rc_hash);                     \
+            if (COLLECT_POSITIONS) {                                           \
+                __m256i cmp = _mm256_cmpgt_epi32(                              \
+                    _mm256_xor_si256(fw_hash,                                  \
+                        _mm256_set1_epi32((int)0x80000000)),                   \
+                    _mm256_xor_si256(rc_hash,                                  \
+                        _mm256_set1_epi32((int)0x80000000)));                  \
+                strand_mask = (uint8_t)_mm256_movemask_ps(                    \
+                    _mm256_castsi256_ps(cmp));                                \
+            }                                                                  \
+        } else {                                                               \
+            if (iter >= S - 1) {                                               \
+                __m256i rm = csyncmer_simd_lookup(f_rot_table, remove_base);   \
+                fw = _mm256_xor_si256(fw_hash, rm);                           \
+            } else {                                                           \
+                fw = fw_hash;                                                  \
+                continue;                                                      \
+            }                                                                  \
+            hash_out = fw_hash;                                                \
+        }                                                                      \
+                                                                               \
+        /* Pack hash + position */                                             \
+        __m256i pos_vec = _mm256_set1_epi32((int)pos);                         \
+        __m256i elem = _mm256_or_si256(                                        \
+            _mm256_and_si256(hash_out, val_mask),                              \
+            _mm256_and_si256(pos_vec, pos_mask));                              \
+        ring_buf[ring_idx] = elem;                                             \
+                                                                               \
+        /* Update prefix minimum */                                            \
+        if (CANONICAL && COLLECT_POSITIONS) {                                  \
+            strand_ring[ring_idx] = strand_mask;                               \
+            __m256i pcmp = _mm256_cmpgt_epi32(                                \
+                _mm256_xor_si256(prefix_min,                                   \
+                    _mm256_set1_epi32((int)0x80000000)),                       \
+                _mm256_xor_si256(elem,                                         \
+                    _mm256_set1_epi32((int)0x80000000)));                      \
+            uint8_t umask = (uint8_t)_mm256_movemask_ps(                      \
+                _mm256_castsi256_ps(pcmp));                                    \
+            prefix_min = _mm256_min_epu32(prefix_min, elem);                   \
+            prefix_strand = (prefix_strand & ~umask) |                        \
+                            (strand_mask & umask);                             \
+        } else {                                                               \
+            prefix_min = _mm256_min_epu32(prefix_min, elem);                   \
+        }                                                                      \
+                                                                               \
+        /* Handle 16-bit position overflow */                                  \
+        if (pos == max_pos_val) {                                              \
+            uint32_t delta = (1 << 16) - 2 - 2 * window_size;                 \
+            pos -= delta;                                                      \
+            pos_offset += delta;                                               \
+            pos_offset_vec = _mm256_set1_epi32((int)pos_offset);              \
+            __m256i dv = _mm256_set1_epi32((int)delta);                       \
+            prefix_min = _mm256_sub_epi32(prefix_min, dv);                    \
+            for (size_t j = 0; j < window_size; j++)                           \
+                ring_buf[j] = _mm256_sub_epi32(ring_buf[j], dv);             \
+        }                                                                      \
+                                                                               \
+        pos++;                                                                 \
+        ring_idx++;                                                            \
+                                                                               \
+        /* Suffix recomputation when ring wraps */                             \
+        if (ring_idx == window_size) {                                         \
+            ring_idx = 0;                                                      \
+            __m256i smin = ring_buf[window_size - 1];                          \
+            if (CANONICAL && COLLECT_POSITIONS) {                              \
+                uint8_t sstr = strand_ring[window_size - 1];                   \
+                for (size_t j = window_size - 1; j > 0; j--) {                \
+                    __m256i prev = ring_buf[j - 1];                            \
+                    __m256i sc = _mm256_cmpgt_epi32(                           \
+                        _mm256_xor_si256(smin,                                 \
+                            _mm256_set1_epi32((int)0x80000000)),               \
+                        _mm256_xor_si256(prev,                                 \
+                            _mm256_set1_epi32((int)0x80000000)));              \
+                    uint8_t sm = (uint8_t)_mm256_movemask_ps(                 \
+                        _mm256_castsi256_ps(sc));                              \
+                    smin = _mm256_min_epu32(smin, prev);                       \
+                    sstr = (sstr & ~sm) | (strand_ring[j - 1] & sm);          \
+                    ring_buf[j - 1] = smin;                                    \
+                    strand_ring[j - 1] = sstr;                                 \
+                }                                                              \
+            } else {                                                           \
+                for (size_t j = window_size - 1; j > 0; j--) {                \
+                    smin = _mm256_min_epu32(smin, ring_buf[j - 1]);            \
+                    ring_buf[j - 1] = smin;                                    \
+                }                                                              \
+            }                                                                  \
+            prefix_min = _mm256_set1_epi32((int)UINT32_MAX);                   \
+            if (CANONICAL && COLLECT_POSITIONS) prefix_strand = 0;             \
+        }                                                                      \
+                                                                               \
+        /* === SYNCMER CHECK === */                                            \
+        if (iter < S - 1 + window_size - 1) continue;                         \
+                                                                               \
+        __m256i suf_min = ring_buf[ring_idx];                                  \
+        __m256i min_elem;                                                      \
+        uint8_t overall_strand = 0;                                            \
+                                                                               \
+        if (CANONICAL && COLLECT_POSITIONS) {                                  \
+            uint8_t suf_str = strand_ring[ring_idx];                           \
+            __m256i oc = _mm256_cmpgt_epi32(                                  \
+                _mm256_xor_si256(prefix_min,                                   \
+                    _mm256_set1_epi32((int)0x80000000)),                       \
+                _mm256_xor_si256(suf_min,                                      \
+                    _mm256_set1_epi32((int)0x80000000)));                      \
+            uint8_t om = (uint8_t)_mm256_movemask_ps(                         \
+                _mm256_castsi256_ps(oc));                                      \
+            min_elem = _mm256_min_epu32(prefix_min, suf_min);                  \
+            overall_strand = (prefix_strand & ~om) | (suf_str & om);          \
+        } else {                                                               \
+            min_elem = _mm256_min_epu32(prefix_min, suf_min);                  \
+        }                                                                      \
+                                                                               \
+        __m256i min_pos_vec = _mm256_add_epi32(                                \
+            _mm256_and_si256(min_elem, pos_mask), pos_offset_vec);             \
+        size_t kmer_idx = iter - S + 1 - window_size + 1;                     \
+                                                                               \
+        if (COLLECT_POSITIONS) {                                               \
+            if (batch_count % 8 == 0) batch_base_kmer = kmer_idx;             \
+            batch_pos[batch_count % 8] = min_pos_vec;                          \
+            if (CANONICAL) batch_strand[batch_count % 8] = overall_strand;     \
+            batch_count++;                                                     \
+                                                                               \
+            if (batch_count % 8 == 0) {                                        \
+                __m256i tp[8];                                                 \
+                csyncmer_transpose_8x8(batch_pos, tp);                         \
+                __m256i bb = _mm256_set1_epi32((int)batch_base_kmer);          \
+                __m256i fs = _mm256_add_epi32(bb, idx_offsets);                \
+                __m256i ls = _mm256_add_epi32(fs, w_minus_1_vec);              \
+                for (int lane = 0; lane < 8; lane++) {                         \
+                    __m256i lo = _mm256_set1_epi32((int)chunk_starts[lane]);   \
+                    __m256i ap = _mm256_add_epi32(lo, fs);                     \
+                    __m256i mpl = tp[lane];                                    \
+                    __m256i isy = _mm256_or_si256(                             \
+                        _mm256_cmpeq_epi32(mpl, fs),                           \
+                        _mm256_cmpeq_epi32(mpl, ls));                          \
+                    if (batch_base_kmer + 7 >= last_lane_limit) {              \
+                        __m256i lim = _mm256_set1_epi32(                       \
+                            (int)(chunk_ends[lane] - chunk_starts[lane]));     \
+                        __m256i ki = _mm256_add_epi32(bb, idx_offsets);        \
+                        isy = _mm256_and_si256(isy,                            \
+                            _mm256_cmpgt_epi32(lim, ki));                      \
+                    }                                                          \
+                    int km = _mm256_movemask_ps(_mm256_castsi256_ps(isy));     \
+                    if (km && lane_counts[lane] + 8 <= max_per_lane) {         \
+                        int skm = (~km) & 0xFF;                                \
+                        if (CANONICAL) {                                       \
+                            size_t oc_ = lane_counts[lane];                    \
+                            lane_counts[lane] = csyncmer_append_filtered(      \
+                                ap, skm,                                       \
+                                ts_pos_bufs_##FUNC_NAME[lane],                 \
+                                lane_counts[lane]);                            \
+                            for (int j = 0; j < 8; j++) {                     \
+                                if ((km >> j) & 1)                             \
+                                    ts_str_bufs_##FUNC_NAME[lane][oc_++] =    \
+                                        (batch_strand[j] >> lane) & 1;        \
+                            }                                                  \
+                        } else {                                               \
+                            lane_counts[lane] = csyncmer_append_filtered(      \
+                                ap, skm,                                       \
+                                ts_pos_bufs_##FUNC_NAME[lane],                 \
+                                lane_counts[lane]);                            \
+                        }                                                      \
+                    }                                                          \
+                }                                                              \
+            }                                                                  \
+        } else {                                                               \
+            /* Count-only: popcount */                                         \
+            __m256i fs = _mm256_set1_epi32((int)kmer_idx);                    \
+            __m256i ls = _mm256_set1_epi32(                                   \
+                (int)(kmer_idx + window_size - 1));                            \
+            __m256i isy = _mm256_or_si256(                                    \
+                _mm256_cmpeq_epi32(min_pos_vec, fs),                          \
+                _mm256_cmpeq_epi32(min_pos_vec, ls));                         \
+            if (kmer_idx >= last_lane_limit) {                                 \
+                __m256i kv = _mm256_set1_epi32((int)kmer_idx);                \
+                __m256i lims = _mm256_sub_epi32(                              \
+                    _mm256_load_si256((const __m256i*)chunk_ends),             \
+                    _mm256_load_si256((const __m256i*)chunk_starts));          \
+                isy = _mm256_and_si256(isy,                                   \
+                    _mm256_cmpgt_epi32(lims, kv));                            \
+            }                                                                  \
+            syncmer_count += __builtin_popcount(                               \
+                _mm256_movemask_ps(_mm256_castsi256_ps(isy)));                \
+        }                                                                      \
+    } /* end main loop */                                                      \
+                                                                               \
+    /* Process remaining partial batch (positions only) */                     \
+    if (COLLECT_POSITIONS) {                                                   \
+        size_t partial = batch_count % 8;                                      \
+        if (partial > 0) {                                                     \
+            for (size_t pi = partial; pi < 8; pi++) {                          \
+                batch_pos[pi] = _mm256_setzero_si256();                        \
+                if (CANONICAL) batch_strand[pi] = 0;                           \
+            }                                                                  \
+            __m256i tp[8];                                                     \
+            csyncmer_transpose_8x8(batch_pos, tp);                            \
+            for (int lane = 0; lane < 8; lane++) {                             \
+                alignas(32) uint32_t absp[8];                                  \
+                for (int j = 0; j < 8; j++)                                    \
+                    absp[j] = (uint32_t)(chunk_starts[lane] +                  \
+                                         batch_base_kmer + j);                \
+                __m256i ap = _mm256_load_si256((__m256i*)absp);                \
+                __m256i fs = ap;                                               \
+                __m256i ls = _mm256_add_epi32(ap,                              \
+                    _mm256_set1_epi32((int)(window_size - 1)));                \
+                __m256i lo = _mm256_set1_epi32((int)chunk_starts[lane]);       \
+                __m256i amp = _mm256_add_epi32(tp[lane], lo);                  \
+                __m256i isy = _mm256_or_si256(                                \
+                    _mm256_cmpeq_epi32(amp, fs),                              \
+                    _mm256_cmpeq_epi32(amp, ls));                             \
+                alignas(32) uint32_t va[8];                                    \
+                for (int j = 0; j < 8; j++) {                                 \
+                    size_t ak = chunk_starts[lane] + batch_base_kmer + j;     \
+                    va[j] = (j < (int)partial && ak < chunk_ends[lane])       \
+                        ? 0xFFFFFFFF : 0;                                      \
+                }                                                              \
+                isy = _mm256_and_si256(isy,                                   \
+                    _mm256_load_si256((__m256i*)va));                          \
+                int km = _mm256_movemask_ps(_mm256_castsi256_ps(isy));         \
+                if (km && lane_counts[lane] + 8 <= max_per_lane) {             \
+                    int skm = (~km) & 0xFF;                                    \
+                    if (CANONICAL) {                                           \
+                        size_t oc_ = lane_counts[lane];                        \
+                        lane_counts[lane] = csyncmer_append_filtered(          \
+                            ap, skm,                                           \
+                            ts_pos_bufs_##FUNC_NAME[lane],                     \
+                            lane_counts[lane]);                                \
+                        for (int j = 0; j < 8; j++) {                         \
+                            if ((km >> j) & 1)                                 \
+                                ts_str_bufs_##FUNC_NAME[lane][oc_++] =        \
+                                    (batch_strand[j] >> lane) & 1;            \
+                        }                                                      \
+                    } else {                                                   \
+                        lane_counts[lane] = csyncmer_append_filtered(          \
+                            ap, skm,                                           \
+                            ts_pos_bufs_##FUNC_NAME[lane],                     \
+                            lane_counts[lane]);                                \
+                    }                                                          \
+                }                                                              \
+            }                                                                  \
+        }                                                                      \
+        /* Concatenate lane buffers */                                         \
+        size_t total = 0;                                                      \
+        for (int i = 0; i < 8; i++) {                                          \
+            if (lane_counts[i] > 0 &&                                          \
+                total + lane_counts[i] <= max_positions) {                     \
+                memcpy(out_positions + total,                                   \
+                       ts_pos_bufs_##FUNC_NAME[i],                             \
+                       lane_counts[i] * sizeof(uint32_t));                     \
+                if (CANONICAL && out_strands) {                                \
+                    memcpy(out_strands + total,                                 \
+                           ts_str_bufs_##FUNC_NAME[i],                         \
+                           lane_counts[i]);                                    \
+                }                                                              \
+                total += lane_counts[i];                                       \
+            }                                                                  \
+        }                                                                      \
+        syncmer_count = total;                                                 \
+    }                                                                          \
+                                                                               \
+    free(delay_buf);                                                           \
+    free(packed);                                                              \
+    return syncmer_count;                                                      \
+}
+
+/* Generate all 4 TWOSTACK variants */
+CSYNCMER_DEFINE_TWOSTACK_SIMD_32(csyncmer_twostack_simd_32_count_,              0, 0)
+CSYNCMER_DEFINE_TWOSTACK_SIMD_32(csyncmer_twostack_simd_32_positions_,          0, 1)
+CSYNCMER_DEFINE_TWOSTACK_SIMD_32(csyncmer_twostack_simd_32_canonical_count_,    1, 0)
+CSYNCMER_DEFINE_TWOSTACK_SIMD_32(csyncmer_twostack_simd_32_canonical_positions_,1, 1)
+
+/* Public API wrappers preserving existing signatures */
+
+static inline size_t csyncmer_twostack_simd_32_count(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S
+) {
+    return csyncmer_twostack_simd_32_count_(sequence, length, K, S,
+                                             NULL, NULL, 0);
+}
+
 static inline size_t csyncmer_twostack_simd_32_positions(
     const char* sequence,
     size_t length,
@@ -1129,693 +1698,21 @@ static inline size_t csyncmer_twostack_simd_32_positions(
     uint32_t* out_positions,
     size_t max_positions
 ) {
-    if (!sequence || length < K || S == 0 || S >= K) {
-        return 0;
-    }
-
-    size_t window_size = K - S + 1;
-    size_t num_smers = length - S + 1;
-    size_t num_kmers = num_smers - window_size + 1;
-
-    // Fall back to scalar for small inputs or large windows
-    if (num_kmers < 64 || window_size > 64) {
-        return csyncmer_rescan_32_positions(
-            sequence, length, K, S, out_positions, max_positions);
-    }
-
-    // Phase 1: Pack sequence to 2-bit representation
-    size_t packed_size = (length + 3) / 4 + 32;  // +32 for SIMD padding
-    uint8_t* packed = (uint8_t*)aligned_alloc(32, packed_size);
-    if (!packed) {
-        return 0;
-    }
-    memset(packed, 0, packed_size);
-    csyncmer_pack_seq_2bit(sequence, length, packed);
-
-    // Phase 2: Calculate chunk parameters
-    size_t chunk_len = (num_kmers + 7) / 8;
-    // Round to multiple of 4 for 2-bit byte alignment
-    chunk_len = ((chunk_len + 3) / 4) * 4;
-    size_t bytes_per_chunk = chunk_len / 4;
-    size_t max_iter = chunk_len + window_size - 1 + S - 1;
-
-    // Chunk start positions (in bases, not bytes)
-    alignas(32) uint32_t chunk_starts[8];
-    alignas(32) uint32_t chunk_ends[8];
-    for (int i = 0; i < 8; i++) {
-        chunk_starts[i] = (uint32_t)(i * chunk_len);
-        chunk_ends[i] = (uint32_t)((i + 1) * chunk_len);
-        if (chunk_ends[i] > num_kmers) chunk_ends[i] = (uint32_t)num_kmers;
-    }
-
-    // Thread-local lane buffers (reused across calls for speed)
-    static CSYNCMER_THREAD_LOCAL uint32_t* lane_bufs[8] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-    static CSYNCMER_THREAD_LOCAL size_t lane_buf_caps[8] = {0};
-    size_t lane_counts[8] = {0};
-
-    size_t max_per_lane = chunk_len + 64;
-    for (int i = 0; i < 8; i++) {
-        if (lane_buf_caps[i] < max_per_lane) {
-            free(lane_bufs[i]);
-            lane_bufs[i] = (uint32_t*)aligned_alloc(32, max_per_lane * sizeof(uint32_t));
-            if (!lane_bufs[i]) {
-                lane_buf_caps[i] = 0;
-                free(packed);
-                return 0;
-            }
-            lane_buf_caps[i] = max_per_lane;
-        }
-    }
-
-    // Phase 3: Initialize SIMD state
-    __m256i f_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_F32);
-
-    // Compute rotated table for remove operation: rot = (S-1) * 7 mod 32
-    uint32_t rot = ((S - 1) * 7) & 31;
-    alignas(32) uint32_t f_rot_arr[8];
-    for (int i = 0; i < 8; i++) {
-        uint32_t x = CSYNCMER_SIMD_F32[i];
-        f_rot_arr[i] = (x << rot) | (x >> (32 - rot));
-    }
-    __m256i f_rot_table = _mm256_load_si256((const __m256i*)f_rot_arr);
-
-    // Forward hash state (8 lanes)
-    __m256i fw = _mm256_setzero_si256();
-
-    // Delay buffer for (add, remove) pairs
-    size_t delay_size = 1;
-    while (delay_size < S) delay_size *= 2;
-    size_t delay_mask = delay_size - 1;
-    __m256i* delay_buf = (__m256i*)aligned_alloc(32, delay_size * sizeof(__m256i));
-    if (!delay_buf) {
-        free(packed);
-        return 0;
-    }
-    for (size_t i = 0; i < delay_size; i++) {
-        delay_buf[i] = _mm256_setzero_si256();
-    }
-    size_t write_idx = 0, read_idx = 0;
-
-    // Two-stack state with combined hash+position (like simd-minimizers)
-    // Format: [hash upper 16 bits][position lower 16 bits]
-    alignas(32) __m256i ring_buf[64];
-    for (size_t i = 0; i < window_size; i++) {
-        ring_buf[i] = _mm256_set1_epi32((int)UINT32_MAX);
-    }
-    __m256i prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-    __m256i val_mask = _mm256_set1_epi32((int)0xFFFF0000);
-    __m256i pos_mask = _mm256_set1_epi32(0x0000FFFF);
-
-    size_t ring_idx = 0;
-    uint32_t pos = 0;
-    uint32_t pos_offset = 0;  // For 16-bit position overflow handling
-    __m256i pos_offset_vec = _mm256_setzero_si256();  // SIMD version (hoisted for perf)
-    const uint32_t max_pos = 0xFFFF;
-
-    // Batch buffer for transpose
-    alignas(32) __m256i batch_pos[8];
-    size_t batch_count = 0;
-    size_t batch_base_kmer = 0;
-
-    // SIMD constants
-    __m256i mask_2bit = _mm256_set1_epi32(0x03);
-
-    // Gather indices for 8 chunks (vectorized)
-    alignas(32) int32_t gather_base[8];
-    for (int i = 0; i < 8; i++) {
-        gather_base[i] = (int32_t)(i * bytes_per_chunk);
-    }
-    __m256i gather_base_vec = _mm256_load_si256((const __m256i*)gather_base);
-
-    // Precomputed constants for batch processing (avoid scalar loops)
-    alignas(32) uint32_t idx_arr[8] = {0, 1, 2, 3, 4, 5, 6, 7};
-    __m256i idx_offsets = _mm256_load_si256((const __m256i*)idx_arr);
-    __m256i w_minus_1_vec = _mm256_set1_epi32((int)(window_size - 1));
-
-    // Precompute validity threshold (lane 7 becomes invalid first)
-    size_t last_lane_limit = chunk_ends[7] - chunk_starts[7];
-
-    // Current buffered data and position within buffer
-    __m256i cur_data = _mm256_setzero_si256();
-    size_t buf_pos = 16;  // Force initial load
-    size_t seq_pos = 0;   // Position in sequence
-
-    // Main loop
-    for (size_t iter = 0; iter < max_iter; iter++) {
-        // Load next batch of bases if needed (every 16 bases)
-        if (buf_pos >= 16) {
-            size_t byte_offset = seq_pos / 4;
-            // Vectorized gather index computation (replaces scalar loop)
-            __m256i byte_off_vec = _mm256_set1_epi32((int32_t)byte_offset);
-            __m256i idx = _mm256_add_epi32(gather_base_vec, byte_off_vec);
-            cur_data = _mm256_i32gather_epi32((const int*)packed, idx, 1);
-            buf_pos = seq_pos % 16;
-        }
-
-        // Extract 2-bit base for each lane
-        __m256i add_base = _mm256_and_si256(
-            _mm256_srli_epi32(cur_data, (int)(buf_pos * 2)),
-            mask_2bit
-        );
-        buf_pos++;
-        seq_pos++;
-
-        // Get remove base from delay buffer
-        __m256i remove_base = delay_buf[read_idx];
-        delay_buf[write_idx] = add_base;
-        write_idx = (write_idx + 1) & delay_mask;
-
-        // Only start reading from delay buffer after S-1 iterations
-        if (iter >= S - 1) {
-            read_idx = (read_idx + 1) & delay_mask;
-        }
-
-        // Compute rolling hash: hash = rotl7(fw) ^ F[add]
-        __m256i fw_rotated = csyncmer_simd_rotl7(fw);
-        __m256i add_hash = csyncmer_simd_lookup(f_table, add_base);
-        __m256i hash_out = _mm256_xor_si256(fw_rotated, add_hash);
-
-        // Update state based on phase
-        if (iter >= S - 1) {
-            // Rolling phase: apply removal fw = hash ^ F_rot[remove]
-            __m256i remove_hash = csyncmer_simd_lookup(f_rot_table, remove_base);
-            fw = _mm256_xor_si256(hash_out, remove_hash);
-        } else {
-            // Accumulation phase: no removal yet
-            fw = hash_out;
-            continue;
-        }
-
-        // Pack hash (upper 16 bits) + position (lower 16 bits) into combined element
-        __m256i pos_vec = _mm256_set1_epi32((int)pos);
-        __m256i elem = _mm256_or_si256(
-            _mm256_and_si256(hash_out, val_mask),  // hash upper 16 bits
-            _mm256_and_si256(pos_vec, pos_mask)    // position lower 16 bits
-        );
-
-        // Store in ring buffer
-        ring_buf[ring_idx] = elem;
-
-        // Update prefix minimum (single unsigned min comparison)
-        // Smaller hash wins; for equal hash, smaller position wins (automatic!)
-        prefix_min = _mm256_min_epu32(prefix_min, elem);
-
-        // Handle 16-bit position overflow (like simd-minimizers)
-        // Use 2*window_size because ring buffer contains suffix minima from previous block
-        if (pos == max_pos) {
-            uint32_t delta = (1 << 16) - 2 - 2 * window_size;
-            pos -= delta;
-            pos_offset += delta;
-            pos_offset_vec = _mm256_set1_epi32((int)pos_offset);
-
-            // Subtract delta from entire element (like simd-minimizers)
-            // No borrow into hash part because all positions >= delta at reset time
-            __m256i delta_vec = _mm256_set1_epi32((int)delta);
-            prefix_min = _mm256_sub_epi32(prefix_min, delta_vec);
-            for (size_t j = 0; j < window_size; j++) {
-                ring_buf[j] = _mm256_sub_epi32(ring_buf[j], delta_vec);
-            }
-        }
-
-        pos++;
-        ring_idx++;
-
-        // Suffix recomputation when ring wraps
-        if (ring_idx == window_size) {
-            ring_idx = 0;
-
-            // Compute suffix minima from right to left (simple min, no tie-breaking needed!)
-            __m256i suffix_min = ring_buf[window_size - 1];
-            for (size_t j = window_size - 1; j > 0; j--) {
-                suffix_min = _mm256_min_epu32(suffix_min, ring_buf[j - 1]);
-                ring_buf[j - 1] = suffix_min;
-            }
-
-            // Reset prefix for next block
-            prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-        }
-
-        // Check for syncmers after full window
-        if (iter >= S - 1 + window_size - 1) {
-            // Get suffix min from ring buffer and compute overall min
-            __m256i suffix_min = ring_buf[ring_idx];
-            __m256i min_elem = _mm256_min_epu32(prefix_min, suffix_min);
-
-            // Extract position from lower 16 bits and add offset to get absolute position
-            __m256i min_pos = _mm256_add_epi32(
-                _mm256_and_si256(min_elem, pos_mask),
-                pos_offset_vec);
-
-            size_t kmer_idx = iter - S + 1 - window_size + 1;
-
-            // Store min_pos in batch (will transpose later)
-            if (batch_count % 8 == 0) batch_base_kmer = kmer_idx;
-            batch_pos[batch_count % 8] = min_pos;
-            batch_count++;
-
-            // Process batch when full
-            if (batch_count % 8 == 0) {
-                __m256i t[8];
-                csyncmer_transpose_8x8(batch_pos, t);
-
-                // Precompute base + idx_offsets once per batch (vectorized)
-                __m256i batch_base = _mm256_set1_epi32((int)batch_base_kmer);
-                __m256i first_smer = _mm256_add_epi32(batch_base, idx_offsets);
-                __m256i last_smer = _mm256_add_epi32(first_smer, w_minus_1_vec);
-
-                for (int lane = 0; lane < 8; lane++) {
-                    // Compute absolute k-mer positions (vectorized, no scalar loop)
-                    __m256i lane_offset = _mm256_set1_epi32((int)chunk_starts[lane]);
-                    __m256i abs_pos = _mm256_add_epi32(lane_offset, first_smer);
-
-                    // t[lane] contains transposed min_pos values (absolute positions with offset)
-                    __m256i min_pos_lane = t[lane];
-
-                    // Syncmer check: min at first or last s-mer position
-                    __m256i is_first = _mm256_cmpeq_epi32(min_pos_lane, first_smer);
-                    __m256i is_last = _mm256_cmpeq_epi32(min_pos_lane, last_smer);
-                    __m256i is_syncmer = _mm256_or_si256(is_first, is_last);
-
-                    // Validity check: skip when all lanes valid (most iterations)
-                    if (batch_base_kmer + 7 >= last_lane_limit) {
-                        // Near end - need per-element validity check
-                        __m256i limit = _mm256_set1_epi32((int)(chunk_ends[lane] - chunk_starts[lane]));
-                        __m256i kmer_indices = _mm256_add_epi32(batch_base, idx_offsets);
-                        __m256i valid_mask = _mm256_cmpgt_epi32(limit, kmer_indices);
-                        is_syncmer = _mm256_and_si256(is_syncmer, valid_mask);
-                    }
-
-                    // Collect positions
-                    int keep_mask = _mm256_movemask_ps(_mm256_castsi256_ps(is_syncmer));
-                    int skip_mask = (~keep_mask) & 0xFF;
-                    if (keep_mask != 0 && lane_counts[lane] + 8 <= max_per_lane) {
-                        lane_counts[lane] = csyncmer_append_filtered(
-                            abs_pos, skip_mask, lane_bufs[lane], lane_counts[lane]);
-                    }
-                }
-            }
-        }
-    }
-
-    // Process remaining partial batch
-    size_t partial = batch_count % 8;
-    if (partial > 0) {
-        // Pad remaining slots with zeros
-        for (size_t i = partial; i < 8; i++) {
-            batch_pos[i] = _mm256_setzero_si256();
-        }
-
-        __m256i t[8];
-        csyncmer_transpose_8x8(batch_pos, t);
-
-        for (int lane = 0; lane < 8; lane++) {
-            alignas(32) uint32_t abs_positions[8];
-            for (int j = 0; j < 8; j++) {
-                abs_positions[j] = (uint32_t)(chunk_starts[lane] + batch_base_kmer + j);
-            }
-            __m256i abs_pos = _mm256_load_si256((__m256i*)abs_positions);
-
-            __m256i first_smer = abs_pos;
-            __m256i last_smer = _mm256_add_epi32(abs_pos,
-                _mm256_set1_epi32((int)(window_size - 1)));
-
-            __m256i lane_offset = _mm256_set1_epi32((int)chunk_starts[lane]);
-            __m256i abs_min_pos = _mm256_add_epi32(t[lane], lane_offset);
-
-            __m256i is_first = _mm256_cmpeq_epi32(abs_min_pos, first_smer);
-            __m256i is_last = _mm256_cmpeq_epi32(abs_min_pos, last_smer);
-            __m256i is_syncmer = _mm256_or_si256(is_first, is_last);
-
-            // Validity mask - also exclude padded entries
-            alignas(32) uint32_t valid_arr[8];
-            for (int j = 0; j < 8; j++) {
-                size_t abs_kmer = chunk_starts[lane] + batch_base_kmer + j;
-                valid_arr[j] = (j < (int)partial && abs_kmer < chunk_ends[lane]) ? 0xFFFFFFFF : 0;
-            }
-            __m256i valid_mask = _mm256_load_si256((__m256i*)valid_arr);
-            is_syncmer = _mm256_and_si256(is_syncmer, valid_mask);
-
-            int keep_mask = _mm256_movemask_ps(_mm256_castsi256_ps(is_syncmer));
-            int skip_mask = (~keep_mask) & 0xFF;
-            if (keep_mask != 0 && lane_counts[lane] + 8 <= max_per_lane) {
-                lane_counts[lane] = csyncmer_append_filtered(
-                    abs_pos, skip_mask, lane_bufs[lane], lane_counts[lane]);
-            }
-        }
-    }
-
-    // Concatenate lane buffers (per-lane sorted, not globally sorted)
-    size_t total = 0;
-    for (int i = 0; i < 8; i++) {
-        if (lane_counts[i] > 0 && total + lane_counts[i] <= max_positions) {
-            memcpy(out_positions + total, lane_bufs[i], lane_counts[i] * sizeof(uint32_t));
-            total += lane_counts[i];
-        }
-    }
-
-    // Cleanup (lane_bufs are static, don't free)
-    free(delay_buf);
-    free(packed);
-
-    return total;
+    return csyncmer_twostack_simd_32_positions_(sequence, length, K, S,
+                                                 out_positions, NULL,
+                                                 max_positions);
 }
 
-// Count-only version of TWOSTACK (no position collection, faster)
-// Same limitations as csyncmer_twostack_simd_32_positions().
-static inline size_t csyncmer_twostack_simd_32_count(
+static inline size_t csyncmer_twostack_simd_32_canonical_count(
     const char* sequence,
     size_t length,
     size_t K,
     size_t S
 ) {
-    if (!sequence || length < K || S == 0 || S >= K) {
-        return 0;
-    }
-
-    size_t window_size = K - S + 1;
-    size_t num_smers = length - S + 1;
-    size_t num_kmers = num_smers - window_size + 1;
-
-    if (num_kmers < 64 || window_size > 64) {
-        size_t count;
-        csyncmer_rescan_32_count(sequence, length, K, S, &count);
-        return count;
-    }
-
-    // Pack sequence to 2-bit representation
-    size_t packed_size = (length + 15) / 16 * 4 + 32;
-    uint8_t* packed = (uint8_t*)aligned_alloc(32, packed_size);
-    if (!packed) return 0;
-    memset(packed, 0, packed_size);
-    csyncmer_pack_seq_2bit(sequence, length, packed);
-
-    size_t chunk_len = (num_kmers + 7) / 8;
-    chunk_len = ((chunk_len + 3) / 4) * 4;
-    size_t bytes_per_chunk = chunk_len / 4;
-    size_t max_iter = chunk_len + window_size - 1 + S - 1;
-
-    alignas(32) uint32_t chunk_starts[8];
-    alignas(32) uint32_t chunk_ends[8];
-    for (int i = 0; i < 8; i++) {
-        chunk_starts[i] = (uint32_t)(i * chunk_len);
-        chunk_ends[i] = (uint32_t)((i + 1) * chunk_len);
-        if (chunk_ends[i] > num_kmers) chunk_ends[i] = (uint32_t)num_kmers;
-    }
-
-    size_t syncmer_count = 0;
-
-    __m256i f_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_F32);
-    uint32_t rot = ((S - 1) * 7) & 31;
-    alignas(32) uint32_t f_rot_arr[8];
-    for (int i = 0; i < 8; i++) {
-        uint32_t x = CSYNCMER_SIMD_F32[i];
-        f_rot_arr[i] = (x << rot) | (x >> (32 - rot));
-    }
-    __m256i f_rot_table = _mm256_load_si256((const __m256i*)f_rot_arr);
-
-    __m256i fw = _mm256_setzero_si256();
-
-    size_t delay_size = 1;
-    while (delay_size < S) delay_size *= 2;
-    size_t delay_mask = delay_size - 1;
-    __m256i* delay_buf = (__m256i*)aligned_alloc(32, delay_size * sizeof(__m256i));
-    if (!delay_buf) { free(packed); return 0; }
-    for (size_t i = 0; i < delay_size; i++) delay_buf[i] = _mm256_setzero_si256();
-    size_t write_idx = 0, read_idx = 0;
-
-    alignas(32) __m256i ring_buf[64];
-    for (size_t i = 0; i < window_size; i++) ring_buf[i] = _mm256_set1_epi32((int)UINT32_MAX);
-    __m256i prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-    __m256i val_mask = _mm256_set1_epi32((int)0xFFFF0000);
-    __m256i pos_mask = _mm256_set1_epi32(0x0000FFFF);
-
-    size_t ring_idx = 0;
-    uint32_t pos = 0;
-    uint32_t pos_offset = 0;
-    __m256i pos_offset_vec = _mm256_setzero_si256();
-    const uint32_t max_pos = 0xFFFF;
-
-    __m256i mask_2bit = _mm256_set1_epi32(0x03);
-
-    alignas(32) int32_t gather_base[8];
-    for (int i = 0; i < 8; i++) gather_base[i] = (int32_t)(i * bytes_per_chunk);
-    __m256i gather_base_vec = _mm256_load_si256((const __m256i*)gather_base);
-
-    size_t last_lane_limit = chunk_ends[7] - chunk_starts[7];
-
-    __m256i cur_data = _mm256_setzero_si256();
-    size_t buf_pos = 16;
-    size_t seq_pos = 0;
-
-    for (size_t iter = 0; iter < max_iter; iter++) {
-        if (buf_pos >= 16) {
-            size_t byte_offset = seq_pos / 4;
-            __m256i byte_off_vec = _mm256_set1_epi32((int32_t)byte_offset);
-            __m256i idx = _mm256_add_epi32(gather_base_vec, byte_off_vec);
-            cur_data = _mm256_i32gather_epi32((const int*)packed, idx, 1);
-            buf_pos = seq_pos % 16;
-        }
-
-        __m256i add_base = _mm256_and_si256(_mm256_srli_epi32(cur_data, (int)(buf_pos * 2)), mask_2bit);
-        buf_pos++;
-        seq_pos++;
-
-        __m256i remove_base = delay_buf[read_idx];
-        delay_buf[write_idx] = add_base;
-        write_idx = (write_idx + 1) & delay_mask;
-        if (iter >= S - 1) read_idx = (read_idx + 1) & delay_mask;
-
-        __m256i fw_rotated = csyncmer_simd_rotl7(fw);
-        __m256i add_hash = csyncmer_simd_lookup(f_table, add_base);
-        __m256i hash_out = _mm256_xor_si256(fw_rotated, add_hash);
-
-        if (iter >= S - 1) {
-            __m256i remove_hash = csyncmer_simd_lookup(f_rot_table, remove_base);
-            fw = _mm256_xor_si256(hash_out, remove_hash);
-        } else {
-            fw = hash_out;
-            continue;
-        }
-
-        __m256i pos_vec = _mm256_set1_epi32((int)pos);
-        __m256i elem = _mm256_or_si256(
-            _mm256_and_si256(hash_out, val_mask),
-            _mm256_and_si256(pos_vec, pos_mask));
-
-        ring_buf[ring_idx] = elem;
-        prefix_min = _mm256_min_epu32(prefix_min, elem);
-
-        if (pos == max_pos) {
-            uint32_t delta = (1 << 16) - 2 - 2 * window_size;
-            pos -= delta;
-            pos_offset += delta;
-            pos_offset_vec = _mm256_set1_epi32((int)pos_offset);
-            __m256i delta_vec = _mm256_set1_epi32((int)delta);
-            prefix_min = _mm256_sub_epi32(prefix_min, delta_vec);
-            for (size_t j = 0; j < window_size; j++)
-                ring_buf[j] = _mm256_sub_epi32(ring_buf[j], delta_vec);
-        }
-
-        pos++;
-        ring_idx++;
-
-        if (ring_idx == window_size) {
-            ring_idx = 0;
-            __m256i suffix_min = ring_buf[window_size - 1];
-            for (size_t j = window_size - 1; j > 0; j--) {
-                suffix_min = _mm256_min_epu32(suffix_min, ring_buf[j - 1]);
-                ring_buf[j - 1] = suffix_min;
-            }
-            prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-        }
-
-        if (iter >= S - 1 + window_size - 1) {
-            __m256i suffix_min = ring_buf[ring_idx];
-            __m256i min_elem = _mm256_min_epu32(prefix_min, suffix_min);
-            __m256i min_pos = _mm256_add_epi32(
-                _mm256_and_si256(min_elem, pos_mask), pos_offset_vec);
-
-            size_t kmer_idx = iter - S + 1 - window_size + 1;
-
-            __m256i first_smer = _mm256_set1_epi32((int)kmer_idx);
-            __m256i last_smer = _mm256_set1_epi32((int)(kmer_idx + window_size - 1));
-            __m256i is_first = _mm256_cmpeq_epi32(min_pos, first_smer);
-            __m256i is_last = _mm256_cmpeq_epi32(min_pos, last_smer);
-            __m256i is_syncmer = _mm256_or_si256(is_first, is_last);
-
-            if (kmer_idx >= last_lane_limit) {
-                __m256i kmer_vec = _mm256_set1_epi32((int)kmer_idx);
-                __m256i limits = _mm256_load_si256((const __m256i*)chunk_ends);
-                __m256i starts = _mm256_load_si256((const __m256i*)chunk_starts);
-                __m256i lane_limits = _mm256_sub_epi32(limits, starts);
-                __m256i valid_mask = _mm256_cmpgt_epi32(lane_limits, kmer_vec);
-                is_syncmer = _mm256_and_si256(is_syncmer, valid_mask);
-            }
-
-            syncmer_count += __builtin_popcount(_mm256_movemask_ps(_mm256_castsi256_ps(is_syncmer)));
-        }
-    }
-
-    free(delay_buf);
-    free(packed);
-    return syncmer_count;
+    return csyncmer_twostack_simd_32_canonical_count_(sequence, length, K, S,
+                                                       NULL, NULL, 0);
 }
 
-// ============================================================================
-// Canonical TWOSTACK SIMD (strand-independent, AVX2)
-// Computes min(forward_hash, rc_hash) for each s-mer, uses the minimum for
-// closed syncmer detection. This provides strand-independent results.
-//
-// LIMITATIONS (same as forward-only TWOSTACK):
-// - Uses 16-bit hash packing, causing ~0.00004% discrepancy vs reference
-// - Falls back to scalar RESCAN when window_size > 64 (K - S + 1 > 64)
-// For exact results, use the scalar canonical iterator.
-// ============================================================================
-
-// Scalar fallback for canonical RESCAN (small inputs or large windows)
-static inline size_t csyncmer_canonical_rescan_32_count(
-    const char* sequence,
-    size_t length,
-    size_t K,
-    size_t S
-) {
-    if (!sequence || length < K || S == 0 || S >= K) {
-        return 0;
-    }
-
-    // Initialize lookup tables
-    uint32_t F_ASCII[256];
-    uint8_t IDX_ASCII[256];
-    uint32_t f_rot[4];
-    csyncmer_init_ascii_hash_table(F_ASCII);
-    csyncmer_init_ascii_to_idx(IDX_ASCII);
-    csyncmer_make_f_rot_32(S, f_rot);
-
-    // RC rotation table (same rotation amount, different constants)
-    uint32_t c_rot[4];
-    uint32_t rot = (uint32_t)(((S - 1) * 7) & 31);
-    for (int i = 0; i < 4; i++) {
-        uint32_t x = (i == 0) ? 0x82572324 : (i == 1) ? 0x4be24456 : (i == 2) ? 0x95c60474 : 0x62a02b4c;
-        c_rot[i] = rot ? ((x << rot) | (x >> (32 - rot))) : x;
-    }
-
-    // RC constants
-    uint32_t RC32[4] = {0x82572324, 0x4be24456, 0x95c60474, 0x62a02b4c};
-    uint32_t RC32_ROTR7[4] = {0x4904ae46, 0xac97c488, 0xe92b8c08, 0x98c54056};
-
-    size_t window_size = K - S + 1;
-    size_t num_smers = length - S + 1;
-    const uint8_t* seq = (const uint8_t*)sequence;
-
-    // Power-of-2 circular buffer
-    size_t buf_size = 1;
-    while (buf_size < window_size) buf_size <<= 1;
-    size_t buf_mask = buf_size - 1;
-    uint32_t* hash_buffer = (uint32_t*)malloc(buf_size * sizeof(uint32_t));
-    if (!hash_buffer) return 0;
-
-    size_t syncmer_count = 0;
-
-    // First s-mer hash (both forward and RC)
-    uint32_t fw_hash = 0;
-    uint32_t rc_hash = 0;
-    for (size_t j = 0; j < S; ++j) {
-        fw_hash = csyncmer_rotl7_32(fw_hash) ^ F_ASCII[seq[j]];
-        rc_hash = csyncmer_rotl7_32(rc_hash) ^ RC32[IDX_ASCII[seq[S - 1 - j]]];
-    }
-
-    uint32_t canon_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;
-    hash_buffer[0] = canon_hash;
-
-    // Rolling state for forward
-    uint32_t fw = fw_hash ^ f_rot[IDX_ASCII[seq[0]]];
-
-    // Fill initial window
-    for (size_t i = 1; i < window_size; ++i) {
-        uint8_t old_first = seq[i - 1];
-        uint8_t new_last = seq[i + S - 1];
-        uint8_t new_first = seq[i];  // First base of new s-mer (for fw state)
-        uint8_t idx_old = IDX_ASCII[old_first];
-        uint8_t idx_new = IDX_ASCII[new_last];
-
-        // Forward rolling
-        fw_hash = csyncmer_rotl7_32(fw) ^ F_ASCII[new_last];
-        fw = fw_hash ^ f_rot[IDX_ASCII[new_first]];  // State uses first base of new s-mer
-
-        // RC rolling: rc = rotr7(rc) ^ rotr7(RC[old_first]) ^ c_rot[new_last]
-        uint32_t rc_rotr = (rc_hash >> 7) | (rc_hash << 25);
-        rc_hash = rc_rotr ^ RC32_ROTR7[idx_old] ^ c_rot[idx_new];
-
-        canon_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;
-        hash_buffer[i & buf_mask] = canon_hash;
-    }
-
-    // Find minimum in first window
-    uint32_t min_hash = UINT32_MAX;
-    size_t min_pos = 0;
-    for (size_t i = 0; i < window_size; ++i) {
-        if (hash_buffer[i] < min_hash) {
-            min_hash = hash_buffer[i];
-            min_pos = i;
-        }
-    }
-
-    // Check first k-mer
-    if (min_pos == 0 || min_pos == window_size - 1) {
-        syncmer_count++;
-    }
-
-    // Main loop
-    for (size_t kmer_idx = 1; kmer_idx < num_smers - window_size + 1; ++kmer_idx) {
-        size_t i = kmer_idx + window_size - 1;
-        uint8_t old_first = seq[i - 1];
-        uint8_t new_last = seq[i + S - 1];
-        uint8_t new_first = seq[i];  // First base of new s-mer
-        uint8_t idx_old = IDX_ASCII[old_first];
-        uint8_t idx_new = IDX_ASCII[new_last];
-
-        // Forward rolling
-        fw_hash = csyncmer_rotl7_32(fw) ^ F_ASCII[new_last];
-        fw = fw_hash ^ f_rot[IDX_ASCII[new_first]];  // State uses first base of new s-mer
-
-        // RC rolling
-        uint32_t rc_rotr = (rc_hash >> 7) | (rc_hash << 25);
-        rc_hash = rc_rotr ^ RC32_ROTR7[idx_old] ^ c_rot[idx_new];
-
-        canon_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;
-        hash_buffer[i & buf_mask] = canon_hash;
-
-        // RESCAN: update minimum
-        if (min_pos < kmer_idx) {
-            min_hash = UINT32_MAX;
-            for (size_t j = kmer_idx; j <= i; ++j) {
-                uint32_t h = hash_buffer[j & buf_mask];
-                if (h < min_hash) {
-                    min_hash = h;
-                    min_pos = j;
-                }
-            }
-        } else {
-            if (canon_hash < min_hash) {
-                min_hash = canon_hash;
-                min_pos = i;
-            }
-        }
-
-        // Check closed syncmer condition
-        size_t min_offset = min_pos - kmer_idx;
-        if (min_offset == 0 || min_offset == window_size - 1) {
-            syncmer_count++;
-        }
-    }
-
-    free(hash_buffer);
-    return syncmer_count;
-}
-
-// Canonical TWOSTACK with position and strand output (dual-hash reference implementation)
-// out_positions: syncmer positions in sequence
-// out_strands: 0=forward had min s-mer, 1=RC had min s-mer
 static inline size_t csyncmer_twostack_simd_32_canonical_positions(
     const char* sequence,
     size_t length,
@@ -1825,651 +1722,10 @@ static inline size_t csyncmer_twostack_simd_32_canonical_positions(
     uint8_t* out_strands,
     size_t max_positions
 ) {
-    if (!sequence || length < K || S == 0 || S >= K || max_positions == 0) {
-        return 0;
-    }
-
-    size_t window_size = K - S + 1;
-    size_t num_smers = length - S + 1;
-    size_t num_kmers = num_smers - window_size + 1;
-
-    // Fall back to scalar for small inputs or large windows
-    // For canonical, we need a scalar fallback that outputs positions and strands
-    if (num_kmers < 64 || window_size > 64) {
-        // Use canonical iterator as fallback
-        size_t count = 0;
-        size_t pos;
-        int strand;
-        CsyncmerIteratorCanonical64* it = csyncmer_iterator_create_canonical_64(sequence, length, K, S);
-        if (it) {
-            while (csyncmer_iterator_next_canonical_64(it, &pos, &strand) && count < max_positions) {
-                out_positions[count] = (uint32_t)pos;
-                out_strands[count] = (uint8_t)strand;
-                count++;
-            }
-            csyncmer_iterator_destroy_canonical_64(it);
-        }
-        return count;
-    }
-
-    // Phase 1: Pack sequence to 2-bit representation
-    size_t packed_size = (length + 3) / 4 + 32;
-    uint8_t* packed = (uint8_t*)aligned_alloc(32, packed_size);
-    if (!packed) return 0;
-    memset(packed, 0, packed_size);
-    csyncmer_pack_seq_2bit(sequence, length, packed);
-
-    // Phase 2: Calculate chunk parameters
-    size_t chunk_len = (num_kmers + 7) / 8;
-    chunk_len = ((chunk_len + 3) / 4) * 4;
-    size_t bytes_per_chunk = chunk_len / 4;
-    size_t max_iter = chunk_len + window_size - 1 + S - 1;
-
-    alignas(32) uint32_t chunk_starts[8];
-    alignas(32) uint32_t chunk_ends[8];
-    for (int i = 0; i < 8; i++) {
-        chunk_starts[i] = (uint32_t)(i * chunk_len);
-        chunk_ends[i] = (uint32_t)((i + 1) * chunk_len);
-        if (chunk_ends[i] > num_kmers) chunk_ends[i] = (uint32_t)num_kmers;
-    }
-
-    // Thread-local lane buffers
-    static CSYNCMER_THREAD_LOCAL uint32_t* lane_bufs[8] = {NULL};
-    static CSYNCMER_THREAD_LOCAL uint8_t* strand_bufs[8] = {NULL};
-    static CSYNCMER_THREAD_LOCAL size_t lane_buf_caps[8] = {0};
-    size_t lane_counts[8] = {0};
-
-    size_t max_per_lane = chunk_len + 64;
-    for (int i = 0; i < 8; i++) {
-        if (lane_buf_caps[i] < max_per_lane) {
-            free(lane_bufs[i]);
-            free(strand_bufs[i]);
-            lane_bufs[i] = (uint32_t*)aligned_alloc(32, max_per_lane * sizeof(uint32_t));
-            strand_bufs[i] = (uint8_t*)aligned_alloc(32, max_per_lane);
-            if (!lane_bufs[i] || !strand_bufs[i]) {
-                // Clean up partial allocation
-                free(lane_bufs[i]);
-                free(strand_bufs[i]);
-                lane_bufs[i] = NULL;
-                strand_bufs[i] = NULL;
-                lane_buf_caps[i] = 0;
-                free(packed);
-                return 0;
-            }
-            lane_buf_caps[i] = max_per_lane;
-        }
-    }
-
-    // Phase 3: Initialize SIMD state
-    __m256i f_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_F32);
-    __m256i rc_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_RC32);
-    __m256i rc_rotr7_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_RC32_ROTR7);
-
-    // Compute rotated tables for remove operation
-    uint32_t rot = ((S - 1) * 7) & 31;
-    alignas(32) uint32_t f_rot_arr[8];
-    alignas(32) uint32_t c_rot_arr[8];
-    for (int i = 0; i < 8; i++) {
-        uint32_t fx = CSYNCMER_SIMD_F32[i];
-        uint32_t cx = CSYNCMER_SIMD_RC32[i];
-        f_rot_arr[i] = (fx << rot) | (fx >> (32 - rot));
-        c_rot_arr[i] = (cx << rot) | (cx >> (32 - rot));
-    }
-    __m256i f_rot_table = _mm256_load_si256((const __m256i*)f_rot_arr);
-    __m256i c_rot_table = _mm256_load_si256((const __m256i*)c_rot_arr);
-
-    // Forward and RC hash states (8 lanes each)
-    __m256i fw = _mm256_setzero_si256();
-    __m256i rc = _mm256_setzero_si256();
-
-    // Delay buffer for (add, remove) pairs
-    size_t delay_size = 1;
-    while (delay_size < S) delay_size *= 2;
-    size_t delay_mask = delay_size - 1;
-    __m256i* delay_buf = (__m256i*)aligned_alloc(32, delay_size * sizeof(__m256i));
-    if (!delay_buf) { free(packed); return 0; }
-    for (size_t i = 0; i < delay_size; i++) delay_buf[i] = _mm256_setzero_si256();
-    size_t write_idx = 0, read_idx = 0;
-
-    // Previous remove_base for RC rolling (RC needs seq[iter-S], not seq[iter-S+1])
-    __m256i prev_remove_base = _mm256_setzero_si256();
-
-    // Two-stack state: [hash upper 16 bits][position lower 16 bits]
-    alignas(32) __m256i ring_buf[64];
-    alignas(32) uint8_t strand_ring[64];  // Per-slot strand (8 bits, 1 per lane)
-    for (size_t i = 0; i < window_size; i++) {
-        ring_buf[i] = _mm256_set1_epi32((int)UINT32_MAX);
-        strand_ring[i] = 0;
-    }
-    __m256i prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-    uint8_t prefix_strand = 0;
-    __m256i val_mask = _mm256_set1_epi32((int)0xFFFF0000);
-    __m256i pos_mask = _mm256_set1_epi32(0x0000FFFF);
-
-    size_t ring_idx = 0;
-    uint32_t pos = 0;
-    uint32_t pos_offset = 0;
-    __m256i pos_offset_vec = _mm256_setzero_si256();
-    const uint32_t max_pos = 0xFFFF;
-
-    // Batch buffer for transpose
-    alignas(32) __m256i batch_pos[8];
-    alignas(32) uint8_t batch_strand[8];  // Strand for each batch entry
-    size_t batch_count = 0;
-    size_t batch_base_kmer = 0;
-
-    __m256i mask_2bit = _mm256_set1_epi32(0x03);
-
-    alignas(32) int32_t gather_base[8];
-    for (int i = 0; i < 8; i++) gather_base[i] = (int32_t)(i * bytes_per_chunk);
-    __m256i gather_base_vec = _mm256_load_si256((const __m256i*)gather_base);
-
-    alignas(32) uint32_t idx_arr[8] = {0, 1, 2, 3, 4, 5, 6, 7};
-    __m256i idx_offsets = _mm256_load_si256((const __m256i*)idx_arr);
-    __m256i w_minus_1_vec = _mm256_set1_epi32((int)(window_size - 1));
-
-    // Compute minimum valid lane limit (handling negative values from underflow)
-    size_t last_lane_limit = chunk_len;
-    for (int i = 0; i < 8; i++) {
-        if (chunk_ends[i] > chunk_starts[i]) {
-            size_t limit = chunk_ends[i] - chunk_starts[i];
-            if (limit < last_lane_limit) last_lane_limit = limit;
-        } else {
-            last_lane_limit = 0;
-        }
-    }
-
-    __m256i cur_data = _mm256_setzero_si256();
-    size_t buf_pos = 16;
-    size_t seq_pos = 0;
-
-    // Main loop
-    for (size_t iter = 0; iter < max_iter; iter++) {
-        if (buf_pos >= 16) {
-            size_t byte_offset = seq_pos / 4;
-            __m256i byte_off_vec = _mm256_set1_epi32((int32_t)byte_offset);
-            __m256i idx = _mm256_add_epi32(gather_base_vec, byte_off_vec);
-            cur_data = _mm256_i32gather_epi32((const int*)packed, idx, 1);
-            buf_pos = seq_pos % 16;
-        }
-
-        __m256i add_base = _mm256_and_si256(_mm256_srli_epi32(cur_data, (int)(buf_pos * 2)), mask_2bit);
-        buf_pos++;
-        seq_pos++;
-
-        __m256i remove_base = delay_buf[read_idx];
-        delay_buf[write_idx] = add_base;
-        write_idx = (write_idx + 1) & delay_mask;
-        if (iter >= S - 1) read_idx = (read_idx + 1) & delay_mask;
-
-        // Forward hash: hash = rotl7(fw) ^ F[add]
-        __m256i fw_rotated = csyncmer_simd_rotl7(fw);
-        __m256i add_hash_fw = csyncmer_simd_lookup(f_table, add_base);
-        __m256i fw_hash = _mm256_xor_si256(fw_rotated, add_hash_fw);
-
-        __m256i rc_hash;
-        if (iter < S - 1) {
-            // Accumulation phase: just accumulate forward hash
-            fw = fw_hash;
-            prev_remove_base = remove_base;  // Save for RC rolling
-            continue;
-        } else if (iter == S - 1) {
-            // First complete s-mer: compute RC hash from delay buffer in reverse
-            // delay_buf contains bases 0..S-1, we need to read S-1, S-2, ..., 0
-            rc = _mm256_setzero_si256();
-            for (size_t j = 0; j < S; j++) {
-                // Read base at position (S-1-j) from delay buffer
-                size_t base_idx = (S - 1 - j) & delay_mask;
-                __m256i base_j = delay_buf[base_idx];
-                __m256i rc_val = csyncmer_simd_lookup(rc_table, base_j);
-                rc = _mm256_xor_si256(csyncmer_simd_rotl7(rc), rc_val);
-            }
-            rc_hash = rc;
-            // Forward state update for first s-mer
-            __m256i fw_remove = csyncmer_simd_lookup(f_rot_table, remove_base);
-            fw = _mm256_xor_si256(fw_hash, fw_remove);
-            prev_remove_base = remove_base;  // Save for RC rolling
-        } else {
-            // Rolling phase: use prev_remove_base for RC (seq[iter-S])
-            __m256i rc_rotr = csyncmer_simd_rotr7(rc);
-            __m256i rc_remove = csyncmer_simd_lookup(rc_rotr7_table, prev_remove_base);
-            __m256i rc_add = csyncmer_simd_lookup(c_rot_table, add_base);
-            rc_hash = _mm256_xor_si256(_mm256_xor_si256(rc_rotr, rc_remove), rc_add);
-            // Forward state update (uses current remove_base)
-            __m256i fw_remove = csyncmer_simd_lookup(f_rot_table, remove_base);
-            fw = _mm256_xor_si256(fw_hash, fw_remove);
-            rc = rc_hash;
-            prev_remove_base = remove_base;  // Save for next RC rolling
-        }
-
-        // Canonical hash = min(fw, rc)
-        __m256i canon_hash = _mm256_min_epu32(fw_hash, rc_hash);
-
-        // Strand = (fw > rc) ? 1 : 0 per lane
-        __m256i cmp = _mm256_cmpgt_epi32(
-            _mm256_xor_si256(fw_hash, _mm256_set1_epi32((int)0x80000000)),
-            _mm256_xor_si256(rc_hash, _mm256_set1_epi32((int)0x80000000)));
-        uint8_t strand_mask = (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(cmp));
-
-        // Pack hash (upper 16 bits) + position (lower 16 bits)
-        __m256i pos_vec = _mm256_set1_epi32((int)pos);
-        __m256i elem = _mm256_or_si256(
-            _mm256_and_si256(canon_hash, val_mask),
-            _mm256_and_si256(pos_vec, pos_mask));
-
-        ring_buf[ring_idx] = elem;
-        strand_ring[ring_idx] = strand_mask;
-
-        // Update prefix minimum with strand tracking
-        __m256i prefix_cmp = _mm256_cmpgt_epi32(
-            _mm256_xor_si256(prefix_min, _mm256_set1_epi32((int)0x80000000)),
-            _mm256_xor_si256(elem, _mm256_set1_epi32((int)0x80000000)));
-        uint8_t update_mask = (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(prefix_cmp));
-        prefix_min = _mm256_min_epu32(prefix_min, elem);
-        prefix_strand = (prefix_strand & ~update_mask) | (strand_mask & update_mask);
-
-        // Handle 16-bit position overflow
-        if (pos == max_pos) {
-            uint32_t delta = (1 << 16) - 2 - 2 * window_size;
-            pos -= delta;
-            pos_offset += delta;
-            pos_offset_vec = _mm256_set1_epi32((int)pos_offset);
-            __m256i delta_vec = _mm256_set1_epi32((int)delta);
-            prefix_min = _mm256_sub_epi32(prefix_min, delta_vec);
-            for (size_t j = 0; j < window_size; j++)
-                ring_buf[j] = _mm256_sub_epi32(ring_buf[j], delta_vec);
-        }
-
-        pos++;
-        ring_idx++;
-
-        // Suffix recomputation with strand tracking
-        if (ring_idx == window_size) {
-            ring_idx = 0;
-            __m256i suffix_min = ring_buf[window_size - 1];
-            uint8_t suffix_strand = strand_ring[window_size - 1];
-
-            for (size_t j = window_size - 1; j > 0; j--) {
-                __m256i prev = ring_buf[j - 1];
-                __m256i scmp = _mm256_cmpgt_epi32(
-                    _mm256_xor_si256(suffix_min, _mm256_set1_epi32((int)0x80000000)),
-                    _mm256_xor_si256(prev, _mm256_set1_epi32((int)0x80000000)));
-                uint8_t smask = (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(scmp));
-                suffix_min = _mm256_min_epu32(suffix_min, prev);
-                suffix_strand = (suffix_strand & ~smask) | (strand_ring[j - 1] & smask);
-                ring_buf[j - 1] = suffix_min;
-                strand_ring[j - 1] = suffix_strand;
-            }
-            prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-            prefix_strand = 0;
-        }
-
-        // Check for syncmers after full window
-        if (iter >= S - 1 + window_size - 1) {
-            __m256i suffix_min = ring_buf[ring_idx];
-            uint8_t suffix_strand_cur = strand_ring[ring_idx];
-
-            // Overall minimum and its strand
-            __m256i ocmp = _mm256_cmpgt_epi32(
-                _mm256_xor_si256(prefix_min, _mm256_set1_epi32((int)0x80000000)),
-                _mm256_xor_si256(suffix_min, _mm256_set1_epi32((int)0x80000000)));
-            uint8_t omask = (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(ocmp));
-            __m256i min_elem = _mm256_min_epu32(prefix_min, suffix_min);
-            uint8_t overall_strand = (prefix_strand & ~omask) | (suffix_strand_cur & omask);
-
-            __m256i min_pos_vec = _mm256_add_epi32(
-                _mm256_and_si256(min_elem, pos_mask), pos_offset_vec);
-
-            size_t kmer_idx = iter - S + 1 - window_size + 1;
-
-            if (batch_count % 8 == 0) batch_base_kmer = kmer_idx;
-            batch_pos[batch_count % 8] = min_pos_vec;
-            batch_strand[batch_count % 8] = overall_strand;
-            batch_count++;
-
-            // Process batch when full
-            if (batch_count % 8 == 0) {
-                __m256i t[8];
-                csyncmer_transpose_8x8(batch_pos, t);
-
-                __m256i batch_base = _mm256_set1_epi32((int)batch_base_kmer);
-                __m256i first_smer = _mm256_add_epi32(batch_base, idx_offsets);
-                __m256i last_smer = _mm256_add_epi32(first_smer, w_minus_1_vec);
-
-                for (int lane = 0; lane < 8; lane++) {
-                    __m256i lane_offset = _mm256_set1_epi32((int)chunk_starts[lane]);
-                    __m256i abs_pos = _mm256_add_epi32(lane_offset, first_smer);
-                    __m256i min_pos_lane = t[lane];
-
-                    __m256i is_first = _mm256_cmpeq_epi32(min_pos_lane, first_smer);
-                    __m256i is_last = _mm256_cmpeq_epi32(min_pos_lane, last_smer);
-                    __m256i is_syncmer = _mm256_or_si256(is_first, is_last);
-
-                    if (batch_base_kmer + 7 >= last_lane_limit) {
-                        __m256i limit = _mm256_set1_epi32((int)(chunk_ends[lane] - chunk_starts[lane]));
-                        __m256i kmer_indices = _mm256_add_epi32(batch_base, idx_offsets);
-                        __m256i valid_mask_check = _mm256_cmpgt_epi32(limit, kmer_indices);
-                        is_syncmer = _mm256_and_si256(is_syncmer, valid_mask_check);
-                    }
-
-                    int keep_mask = _mm256_movemask_ps(_mm256_castsi256_ps(is_syncmer));
-                    if (keep_mask != 0 && lane_counts[lane] + 8 <= max_per_lane) {
-                        int skip_mask = (~keep_mask) & 0xFF;
-                        size_t old_count = lane_counts[lane];
-                        lane_counts[lane] = csyncmer_append_filtered(
-                            abs_pos, skip_mask, lane_bufs[lane], lane_counts[lane]);
-
-                        // Extract strands for kept positions
-                        alignas(32) uint32_t pos_arr[8];
-                        _mm256_store_si256((__m256i*)pos_arr, abs_pos);
-                        for (int j = 0; j < 8; j++) {
-                            if ((keep_mask >> j) & 1) {
-                                uint8_t s = (batch_strand[j] >> lane) & 1;
-                                strand_bufs[lane][old_count++] = s;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Process remaining partial batch
-    size_t partial = batch_count % 8;
-    if (partial > 0) {
-        for (size_t i = partial; i < 8; i++) {
-            batch_pos[i] = _mm256_setzero_si256();
-            batch_strand[i] = 0;
-        }
-
-        __m256i t[8];
-        csyncmer_transpose_8x8(batch_pos, t);
-
-        for (int lane = 0; lane < 8; lane++) {
-            alignas(32) uint32_t abs_positions[8];
-            for (int j = 0; j < 8; j++) {
-                abs_positions[j] = (uint32_t)(chunk_starts[lane] + batch_base_kmer + j);
-            }
-            __m256i abs_pos = _mm256_load_si256((__m256i*)abs_positions);
-
-            __m256i first_smer = abs_pos;
-            __m256i last_smer = _mm256_add_epi32(abs_pos, _mm256_set1_epi32((int)(window_size - 1)));
-
-            __m256i lane_offset = _mm256_set1_epi32((int)chunk_starts[lane]);
-            __m256i abs_min_pos = _mm256_add_epi32(t[lane], lane_offset);
-
-            __m256i is_first = _mm256_cmpeq_epi32(abs_min_pos, first_smer);
-            __m256i is_last = _mm256_cmpeq_epi32(abs_min_pos, last_smer);
-            __m256i is_syncmer = _mm256_or_si256(is_first, is_last);
-
-            alignas(32) uint32_t valid_arr[8];
-            for (int j = 0; j < 8; j++) {
-                size_t abs_kmer = chunk_starts[lane] + batch_base_kmer + j;
-                valid_arr[j] = (j < (int)partial && abs_kmer < chunk_ends[lane]) ? 0xFFFFFFFF : 0;
-            }
-            __m256i valid_mask_v = _mm256_load_si256((__m256i*)valid_arr);
-            is_syncmer = _mm256_and_si256(is_syncmer, valid_mask_v);
-
-            int keep_mask = _mm256_movemask_ps(_mm256_castsi256_ps(is_syncmer));
-            if (keep_mask != 0 && lane_counts[lane] + 8 <= max_per_lane) {
-                int skip_mask = (~keep_mask) & 0xFF;
-                size_t old_count = lane_counts[lane];
-                lane_counts[lane] = csyncmer_append_filtered(
-                    abs_pos, skip_mask, lane_bufs[lane], lane_counts[lane]);
-
-                for (int j = 0; j < 8; j++) {
-                    if ((keep_mask >> j) & 1) {
-                        uint8_t s = (batch_strand[j] >> lane) & 1;
-                        strand_bufs[lane][old_count++] = s;
-                    }
-                }
-            }
-        }
-    }
-
-    // Concatenate lane buffers
-    size_t total = 0;
-    for (int i = 0; i < 8; i++) {
-        if (lane_counts[i] > 0 && total + lane_counts[i] <= max_positions) {
-            memcpy(out_positions + total, lane_bufs[i], lane_counts[i] * sizeof(uint32_t));
-            memcpy(out_strands + total, strand_bufs[i], lane_counts[i]);
-            total += lane_counts[i];
-        }
-    }
-
-    free(delay_buf);
-    free(packed);
-    return total;
+    return csyncmer_twostack_simd_32_canonical_positions_(
+        sequence, length, K, S, out_positions, out_strands, max_positions);
 }
 
-// Count-only canonical TWOSTACK using dual-hash (computes both fw and rc every iteration)
-// This is the reference implementation for verification
-static inline size_t csyncmer_twostack_simd_32_canonical_count(
-    const char* sequence,
-    size_t length,
-    size_t K,
-    size_t S
-) {
-    if (!sequence || length < K || S == 0 || S >= K) {
-        return 0;
-    }
-
-    size_t window_size = K - S + 1;
-    size_t num_smers = length - S + 1;
-    size_t num_kmers = num_smers - window_size + 1;
-
-    // Fall back to scalar for small inputs or large windows
-    if (num_kmers < 64 || window_size > 64) {
-        return csyncmer_canonical_rescan_32_count(sequence, length, K, S);
-    }
-
-    // Pack sequence to 2-bit representation
-    size_t packed_size = (length + 15) / 16 * 4 + 32;
-    uint8_t* packed = (uint8_t*)aligned_alloc(32, packed_size);
-    if (!packed) return 0;
-    memset(packed, 0, packed_size);
-    csyncmer_pack_seq_2bit(sequence, length, packed);
-
-    size_t chunk_len = (num_kmers + 7) / 8;
-    chunk_len = ((chunk_len + 3) / 4) * 4;
-    size_t bytes_per_chunk = chunk_len / 4;
-    size_t max_iter = chunk_len + window_size - 1 + S - 1;
-
-    alignas(32) uint32_t chunk_starts[8];
-    alignas(32) uint32_t chunk_ends[8];
-    for (int i = 0; i < 8; i++) {
-        chunk_starts[i] = (uint32_t)(i * chunk_len);
-        chunk_ends[i] = (uint32_t)((i + 1) * chunk_len);
-        if (chunk_ends[i] > num_kmers) chunk_ends[i] = (uint32_t)num_kmers;
-    }
-
-    size_t syncmer_count = 0;
-
-    __m256i f_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_F32);
-    __m256i rc_rotr7_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_RC32_ROTR7);
-
-    uint32_t rot = ((S - 1) * 7) & 31;
-    alignas(32) uint32_t f_rot_arr[8];
-    alignas(32) uint32_t c_rot_arr[8];
-    for (int i = 0; i < 8; i++) {
-        uint32_t fx = CSYNCMER_SIMD_F32[i];
-        uint32_t cx = CSYNCMER_SIMD_RC32[i];
-        f_rot_arr[i] = (fx << rot) | (fx >> (32 - rot));
-        c_rot_arr[i] = (cx << rot) | (cx >> (32 - rot));
-    }
-    __m256i f_rot_table = _mm256_load_si256((const __m256i*)f_rot_arr);
-    __m256i c_rot_table = _mm256_load_si256((const __m256i*)c_rot_arr);
-
-    __m256i fw = _mm256_setzero_si256();
-    __m256i rc = _mm256_setzero_si256();
-
-    size_t delay_size = 1;
-    while (delay_size < S) delay_size *= 2;
-    size_t delay_mask = delay_size - 1;
-    __m256i* delay_buf = (__m256i*)aligned_alloc(32, delay_size * sizeof(__m256i));
-    if (!delay_buf) { free(packed); return 0; }
-    for (size_t i = 0; i < delay_size; i++) delay_buf[i] = _mm256_setzero_si256();
-
-    // Previous remove_base for RC rolling (RC needs seq[iter-S], not seq[iter-S+1])
-    __m256i prev_remove_base = _mm256_setzero_si256();
-    size_t write_idx = 0, read_idx = 0;
-
-    alignas(32) __m256i ring_buf[64];
-    for (size_t i = 0; i < window_size; i++) ring_buf[i] = _mm256_set1_epi32((int)UINT32_MAX);
-    __m256i prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-    __m256i val_mask = _mm256_set1_epi32((int)0xFFFF0000);
-    __m256i pos_mask = _mm256_set1_epi32(0x0000FFFF);
-
-    size_t ring_idx = 0;
-    uint32_t pos = 0;
-    uint32_t pos_offset = 0;
-    __m256i pos_offset_vec = _mm256_setzero_si256();
-    const uint32_t max_pos = 0xFFFF;
-
-    __m256i mask_2bit = _mm256_set1_epi32(0x03);
-
-    alignas(32) int32_t gather_base[8];
-    for (int i = 0; i < 8; i++) gather_base[i] = (int32_t)(i * bytes_per_chunk);
-    __m256i gather_base_vec = _mm256_load_si256((const __m256i*)gather_base);
-
-    // Compute minimum valid lane limit (handling negative values from underflow)
-    size_t last_lane_limit = chunk_len;
-    for (int i = 0; i < 8; i++) {
-        if (chunk_ends[i] > chunk_starts[i]) {
-            size_t limit = chunk_ends[i] - chunk_starts[i];
-            if (limit < last_lane_limit) last_lane_limit = limit;
-        } else {
-            last_lane_limit = 0;
-        }
-    }
-
-    __m256i cur_data = _mm256_setzero_si256();
-    size_t buf_pos = 16;
-    size_t seq_pos = 0;
-
-    for (size_t iter = 0; iter < max_iter; iter++) {
-        if (buf_pos >= 16) {
-            size_t byte_offset = seq_pos / 4;
-            __m256i byte_off_vec = _mm256_set1_epi32((int32_t)byte_offset);
-            __m256i idx = _mm256_add_epi32(gather_base_vec, byte_off_vec);
-            cur_data = _mm256_i32gather_epi32((const int*)packed, idx, 1);
-            buf_pos = seq_pos % 16;
-        }
-
-        __m256i add_base = _mm256_and_si256(_mm256_srli_epi32(cur_data, (int)(buf_pos * 2)), mask_2bit);
-        buf_pos++;
-        seq_pos++;
-
-        __m256i remove_base = delay_buf[read_idx];
-        delay_buf[write_idx] = add_base;
-        write_idx = (write_idx + 1) & delay_mask;
-        if (iter >= S - 1) read_idx = (read_idx + 1) & delay_mask;
-
-        // Forward hash
-        __m256i fw_rotated = csyncmer_simd_rotl7(fw);
-        __m256i add_hash_fw = csyncmer_simd_lookup(f_table, add_base);
-        __m256i fw_hash = _mm256_xor_si256(fw_rotated, add_hash_fw);
-
-        __m256i rc_hash;
-        if (iter < S - 1) {
-            // Accumulation phase: just accumulate forward hash
-            fw = fw_hash;
-            prev_remove_base = remove_base;  // Save for RC rolling
-            continue;
-        } else if (iter == S - 1) {
-            // First complete s-mer: compute RC hash from delay buffer in reverse
-            __m256i rc_table = _mm256_load_si256((const __m256i*)CSYNCMER_SIMD_RC32);
-            rc = _mm256_setzero_si256();
-            for (size_t j = 0; j < S; j++) {
-                size_t base_idx = (S - 1 - j) & delay_mask;
-                __m256i base_j = delay_buf[base_idx];
-                __m256i rc_val = csyncmer_simd_lookup(rc_table, base_j);
-                rc = _mm256_xor_si256(csyncmer_simd_rotl7(rc), rc_val);
-            }
-            rc_hash = rc;
-            __m256i fw_remove = csyncmer_simd_lookup(f_rot_table, remove_base);
-            fw = _mm256_xor_si256(fw_hash, fw_remove);
-            prev_remove_base = remove_base;  // Save for RC rolling
-        } else {
-            // Rolling phase: use prev_remove_base for RC (seq[iter-S])
-            __m256i rc_rotr = csyncmer_simd_rotr7(rc);
-            __m256i rc_remove = csyncmer_simd_lookup(rc_rotr7_table, prev_remove_base);
-            __m256i rc_add = csyncmer_simd_lookup(c_rot_table, add_base);
-            rc_hash = _mm256_xor_si256(_mm256_xor_si256(rc_rotr, rc_remove), rc_add);
-            __m256i fw_remove = csyncmer_simd_lookup(f_rot_table, remove_base);
-            fw = _mm256_xor_si256(fw_hash, fw_remove);
-            rc = rc_hash;
-            prev_remove_base = remove_base;  // Save for next RC rolling
-        }
-
-        // Canonical hash = min(fw, rc)
-        __m256i canon_hash = _mm256_min_epu32(fw_hash, rc_hash);
-
-        __m256i pos_vec = _mm256_set1_epi32((int)pos);
-        __m256i elem = _mm256_or_si256(
-            _mm256_and_si256(canon_hash, val_mask),
-            _mm256_and_si256(pos_vec, pos_mask));
-
-        ring_buf[ring_idx] = elem;
-        prefix_min = _mm256_min_epu32(prefix_min, elem);
-
-        if (pos == max_pos) {
-            uint32_t delta = (1 << 16) - 2 - 2 * window_size;
-            pos -= delta;
-            pos_offset += delta;
-            pos_offset_vec = _mm256_set1_epi32((int)pos_offset);
-            __m256i delta_vec = _mm256_set1_epi32((int)delta);
-            prefix_min = _mm256_sub_epi32(prefix_min, delta_vec);
-            for (size_t j = 0; j < window_size; j++)
-                ring_buf[j] = _mm256_sub_epi32(ring_buf[j], delta_vec);
-        }
-
-        pos++;
-        ring_idx++;
-
-        if (ring_idx == window_size) {
-            ring_idx = 0;
-            __m256i suffix_min = ring_buf[window_size - 1];
-            for (size_t j = window_size - 1; j > 0; j--) {
-                suffix_min = _mm256_min_epu32(suffix_min, ring_buf[j - 1]);
-                ring_buf[j - 1] = suffix_min;
-            }
-            prefix_min = _mm256_set1_epi32((int)UINT32_MAX);
-        }
-
-        if (iter >= S - 1 + window_size - 1) {
-            __m256i suffix_min = ring_buf[ring_idx];
-            __m256i min_elem = _mm256_min_epu32(prefix_min, suffix_min);
-            __m256i min_pos_v = _mm256_add_epi32(
-                _mm256_and_si256(min_elem, pos_mask), pos_offset_vec);
-
-            size_t kmer_idx = iter - S + 1 - window_size + 1;
-
-            __m256i first_smer = _mm256_set1_epi32((int)kmer_idx);
-            __m256i last_smer = _mm256_set1_epi32((int)(kmer_idx + window_size - 1));
-            __m256i is_first = _mm256_cmpeq_epi32(min_pos_v, first_smer);
-            __m256i is_last = _mm256_cmpeq_epi32(min_pos_v, last_smer);
-            __m256i is_syncmer = _mm256_or_si256(is_first, is_last);
-
-            if (kmer_idx >= last_lane_limit) {
-                __m256i kmer_vec = _mm256_set1_epi32((int)kmer_idx);
-                __m256i limits = _mm256_load_si256((const __m256i*)chunk_ends);
-                __m256i starts = _mm256_load_si256((const __m256i*)chunk_starts);
-                __m256i lane_limits = _mm256_sub_epi32(limits, starts);
-                __m256i valid_mask = _mm256_cmpgt_epi32(lane_limits, kmer_vec);
-                is_syncmer = _mm256_and_si256(is_syncmer, valid_mask);
-            }
-
-            syncmer_count += __builtin_popcount(_mm256_movemask_ps(_mm256_castsi256_ps(is_syncmer)));
-        }
-    }
-
-    free(delay_buf);
-    free(packed);
-    return syncmer_count;
-}
-
-// ============================================================================
 // Note on TG-count optimization (from simd-minimizers)
 // ============================================================================
 //

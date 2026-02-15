@@ -1,2 +1,6 @@
 # Header copied from repo root by setup.py at build time
 csyncmer_fast.h
+
+# Build artifacts
+__pycache__/
+*.so

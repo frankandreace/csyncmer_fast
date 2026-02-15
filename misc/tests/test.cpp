@@ -623,7 +623,14 @@ int main(int argc, char *argv[]) {
     run_unit_tests();
 
     if (argc < 4) {
-        printf("Unit tests passed. Skipping FASTA correctness tests (no file provided).\n");
+        printf("\nUnit tests passed. Skipping FASTA correctness tests (no file provided).\n");
+        printf("\nUsage: %s FASTA_FILE K S\n", argv[0]);
+        printf("\n  Runs cross-implementation correctness validation on a FASTA sequence.\n");
+        printf("  Compares syncmer counts across all implementations (seqhash, ntHash32,\n");
+        printf("  ntHash64, ntHash128, canonical) and verifies they agree within each\n");
+        printf("  hash family. The 16-bit TWOSTACK SIMD approximation is allowed ~0.02%%\n");
+        printf("  tolerance vs exact scalar.\n");
+        printf("\n  Example: %s test_100kbp.fasta 31 15\n\n", argv[0]);
         return 0;
     }
 

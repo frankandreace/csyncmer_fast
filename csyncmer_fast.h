@@ -1148,7 +1148,12 @@ static inline size_t csyncmer_append_filtered(
 // LIMITATIONS:
 // - Uses 16-bit hash packing, causing ~0.00004% discrepancy vs reference when
 //   two s-mer hashes have identical upper 16 bits.
-// - Falls back to scalar RESCAN when window_size > 64 (i.e., K - S + 1 > 64).
+// - Falls back to scalar RESCAN when window_size > 64 (i.e., K - S + 1 > 64)
+//   or num_kmers < 64. The fallback uses full 32-bit hash resolution, so results
+//   may differ from the SIMD path in the rare case of 16-bit hash collisions.
+//   This is inconsequential for the num_kmers < 64 case (too few s-mers for
+//   collisions), but could in theory matter for the window_size > 64 case on
+//   long sequences.
 // For exact results, use csyncmer_rescan_32_count() or the 64-bit
 // iterator API (csyncmer_iterator_*_64).
 

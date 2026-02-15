@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-from csyncmer_fast import SyncmerIterator
+from csyncmer_fast import SyncmerIterator, CanonicalSyncmerIterator, count_syncmers, count_syncmers_canonical
 import argparse
 from time import time
+
 
 def load_sequence(fasta_file: str):
     sequence: list = []
@@ -10,69 +11,71 @@ def load_sequence(fasta_file: str):
         for line in f:
             if not line.startswith('>'):
                 sequence.append(line.strip())
+    return ''.join(sequence)
 
-        return ''.join(sequence)
 
-def benchmark(filename: str, kmer_length:int = 31, smer_length: int = 11):
+def benchmark(filename: str, kmer_length: int = 31, smer_length: int = 11):
     sequence = load_sequence(filename)
     sequence_size_in_MB = len(sequence) / (1024 ** 2)
 
-    ## RETURNING THEM IN A LIST USING PYTHON ITERATOR
-    print(f"Running on seq {sequence[:10]}...")
+    print(f"Sequence length: {len(sequence)} ({sequence_size_in_MB:.2f} MB)")
+    print(f"k={kmer_length}, s={smer_length}")
+    print()
+
+    # Forward iterator: collect as list
     start_time = time()
-    syncmers: list = list(SyncmerIterator(sequence, kmer_length,smer_length))
+    positions = list(SyncmerIterator(sequence, kmer_length, smer_length))
     elapsed_time = time() - start_time
+    speed = sequence_size_in_MB / elapsed_time
+    print(f"--- Forward iterator (list) ---")
+    print(f"  Syncmers: {len(positions)}, Time: {elapsed_time:.3f}s, Speed: {speed:.1f} MB/s")
 
-    print("----- RETURN ALL AS LIST OF TUPLE USING PYTHON ITERATOR-----")
-    print(f"{syncmers[0]}")
-    print(f"ELAPSED TIME:{elapsed_time}")
-    print(f"SEQUENCE SIZE:{sequence_size_in_MB}")
-    speed_MB_sec = sequence_size_in_MB / elapsed_time
-    num_syncmer_computed: int = len(syncmers)
-    print(f"SPEED MB/S {speed_MB_sec}")
-    print(f'{speed_MB_sec:.3f}\t{num_syncmer_computed}\t{len(sequence)}')
-    
-    #ITERATING OVER ELEMENTS SYNCMER BY SYNCMER
-    print(f"Running on seq {sequence[:10]}...")
+    # Forward iterator: batch numpy
     start_time = time()
-    tot_syncmer = 0
-    for syncmer in SyncmerIterator(sequence, kmer_length,smer_length):
-        tot_syncmer+=1
+    arr = SyncmerIterator(sequence, kmer_length, smer_length).get_all_positions()
     elapsed_time = time() - start_time
+    speed = sequence_size_in_MB / elapsed_time
+    print(f"--- Forward batch (numpy) ---")
+    print(f"  Syncmers: {len(arr)}, Time: {elapsed_time:.3f}s, Speed: {speed:.1f} MB/s")
 
-    print("----- LOOP OVER ITERATOR 1 ELEMENT AT A TIME -----")
-    print(f"ELAPSED TIME:{elapsed_time}")
-    print(f"SEQUENCE SIZE:{sequence_size_in_MB}")
-    speed_MB_sec = sequence_size_in_MB / elapsed_time
-    print(f"SPEED MB/S {speed_MB_sec}")
-    print(f'{speed_MB_sec:.3f}\t{tot_syncmer}\t{len(sequence)}')
-
-    #DIRECTLY RETURN THEM WITHOUT USING AN ITERATOR
-    print(f"Running on seq {sequence[:10]}...")
+    # SIMD count (forward)
     start_time = time()
-    tot_syncmer = 0
-    syncmer_iterator = SyncmerIterator(sequence,kmer_length,smer_length)
-    hash_values, kmer_positions, smer_positions = syncmer_iterator.get_all_syncmers()
+    count = count_syncmers(sequence, kmer_length, smer_length)
     elapsed_time = time() - start_time
+    speed = sequence_size_in_MB / elapsed_time
+    print(f"--- SIMD count (forward) ---")
+    print(f"  Syncmers: {count}, Time: {elapsed_time:.3f}s, Speed: {speed:.1f} MB/s")
 
-    print("----- DIRECT RETURN ALL AS 3 NUMPY ARRAYS -----")
-    print(f"{hash_values[0]},{kmer_positions[0]},{smer_positions[0]}")
-    print(f"ELAPSED TIME:{elapsed_time}")
-    print(f"SEQUENCE SIZE:{sequence_size_in_MB}")
-    speed_MB_sec = sequence_size_in_MB / elapsed_time
-    print(f"SPEED MB/S {speed_MB_sec}")
-    print(f'{speed_MB_sec:.3f}\t{len(hash_values)}\t{len(sequence)}')
+    # Canonical iterator: collect as list
+    start_time = time()
+    results = list(CanonicalSyncmerIterator(sequence, kmer_length, smer_length))
+    elapsed_time = time() - start_time
+    speed = sequence_size_in_MB / elapsed_time
+    print(f"--- Canonical iterator (list) ---")
+    print(f"  Syncmers: {len(results)}, Time: {elapsed_time:.3f}s, Speed: {speed:.1f} MB/s")
 
+    # Canonical iterator: batch numpy
+    start_time = time()
+    pos_arr, strand_arr = CanonicalSyncmerIterator(sequence, kmer_length, smer_length).get_all_positions()
+    elapsed_time = time() - start_time
+    speed = sequence_size_in_MB / elapsed_time
+    print(f"--- Canonical batch (numpy) ---")
+    print(f"  Syncmers: {len(pos_arr)}, Time: {elapsed_time:.3f}s, Speed: {speed:.1f} MB/s")
 
-# my_syncmers = list(SyncmerIterator(sequence, kmer_length, smer_length)
+    # SIMD count (canonical)
+    start_time = time()
+    count_c = count_syncmers_canonical(sequence, kmer_length, smer_length)
+    elapsed_time = time() - start_time
+    speed = sequence_size_in_MB / elapsed_time
+    print(f"--- SIMD count (canonical) ---")
+    print(f"  Syncmers: {count_c}, Time: {elapsed_time:.3f}s, Speed: {speed:.1f} MB/s")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input_fasta", type=str, help="input fasta file", required=True)
-    # parser.add_argument("-o", "--output", type=str, help="output benchmark tsv", required=True)
     parser.add_argument("-k", "--kmer_size", type=int, help="k-mer length", default=31)
     parser.add_argument("-s", "--smer_size", type=int, help="s-mer length", default=11)
     args = parser.parse_args()
 
-    benchmark(args.input_fasta, args.kmer_size, args.smer_size) #, args.output
+    benchmark(args.input_fasta, args.kmer_size, args.smer_size)

@@ -3,23 +3,21 @@ requires = [
     "setuptools>=61.0",
     "wheel",
     "pybind11>=2.11",
-    "pytest>=7.0",
-    "pytest-cov",
     ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "csyncmer_fast"
-version = "0.1.0"
-description = "Fast syncmer generation using nthash on single thread."
-readme = "../../README.md"
+version = "0.2.0"
+description = "Fast closed syncmer detection using ntHash rolling hash."
+# readme lives at repo root; omitted here to avoid setuptools path restriction
+# readme = "../../README.md"
 requires-python = ">=3.8"
-dependencies = []
+dependencies = ["numpy"]
 
 [tool.setuptools.packages.find]
 where = ["."]
 
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
+python_files = ["test_*.py", "unit_test.py"]

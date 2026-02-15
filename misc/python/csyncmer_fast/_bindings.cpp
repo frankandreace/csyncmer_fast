@@ -1,100 +1,168 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
-#include <iostream>
+#include <vector>
 
-#include "../../csyncmer_fast.h"
+#include "csyncmer_fast.h"
 
 namespace py = pybind11;
 
-// Wrapper class for the iterator
-
+// Forward-only iterator: yields positions (int)
 class PySyncmerIterator
 {
 private:
-    SyncmerIteratorS * iterator;
+    CsyncmerIterator64* iterator;
 public:
-    
-    // constructor
-    PySyncmerIterator(std::string& sequence, size_t k, size_t s){
-        iterator = syncmer_generator_createS(sequence.data(), sequence.size(), k, s);
-        if (!iterator){
-            throw std::runtime_error("Failed to create syncmer iterator. Check sequence and k-mer/s-mer length.");
+    PySyncmerIterator(const std::string& sequence, size_t k, size_t s) {
+        iterator = csyncmer_iterator_create_64(sequence.data(), sequence.size(), k, s);
+        if (!iterator) {
+            throw std::runtime_error(
+                "Failed to create syncmer iterator. "
+                "Check that len(sequence) >= k and 0 < s < k.");
         }
     }
-    
-    // Destroyer
-    ~PySyncmerIterator(){
-        if (iterator){
-            syncmer_generator_destroyS(iterator);
+
+    ~PySyncmerIterator() {
+        if (iterator) {
+            csyncmer_iterator_destroy_64(iterator);
         }
     }
-    
-    //Class is non-copyable
+
     PySyncmerIterator(const PySyncmerIterator&) = delete;
-    PySyncmerIterator operator=(const PySyncmerIterator&) = delete;
+    PySyncmerIterator& operator=(const PySyncmerIterator&) = delete;
 
-    // Python iterator
-    PySyncmerIterator& iter() {return *this;}
+    PySyncmerIterator& iter() { return *this; }
 
-    py::tuple get_all_syncmers(){
-        std::vector<U64> hash_values;
-        std::vector<U64> kmer_position;
-        std::vector<U64> smer_position;
-
-        Syncmer64 syncmer = {0,0,0};
-        bool keep {true};
-        while(keep){
-            
-            if (syncmer_iterator_nextS(iterator, &syncmer)){
-                hash_values.push_back(syncmer.hash_value);
-                kmer_position.push_back(syncmer.kmer_position);
-                smer_position.push_back(syncmer.smer_position);
-            }
-            
+    py::int_ next() {
+        size_t pos;
+        if (csyncmer_iterator_next_64(iterator, &pos)) {
+            return py::int_(pos);
         }
-        size_t num_elements = hash_values.size();
-        std::cout << "SEEN " << num_elements << " SYNCMERS." << std::endl;
-        py::array_t<U64> hash_array(num_elements);
-        py::array_t<U64> kpos_array(num_elements);
-        py::array_t<U64> spos_array(num_elements);
-        
-        std::memcpy(hash_array.mutable_data(), hash_values.data(), num_elements * sizeof(U64));
-        std::memcpy(kpos_array.mutable_data(), kmer_position.data(), num_elements * sizeof(U64));
-        std::memcpy(spos_array.mutable_data(), smer_position.data(), num_elements * sizeof(U64));
-
-        return py::make_tuple(hash_array, kpos_array, spos_array);
+        throw py::stop_iteration();
     }
 
-    py::object next() {
-        Syncmer64 syncmer = {0,0,0};
-        if (syncmer_iterator_nextS(iterator, &syncmer)){
-            // auto [high, low] = split_uint128(syncmer.hash_value);
-            return py::make_tuple(syncmer.hash_value, syncmer.kmer_position, syncmer.smer_position);
-        } else {
-            throw py::stop_iteration();
+    py::array_t<uint64_t> get_all_positions() {
+        std::vector<uint64_t> positions;
+        size_t pos;
+        while (csyncmer_iterator_next_64(iterator, &pos)) {
+            positions.push_back(static_cast<uint64_t>(pos));
         }
+        py::array_t<uint64_t> arr(positions.size());
+        std::memcpy(arr.mutable_data(), positions.data(),
+                     positions.size() * sizeof(uint64_t));
+        return arr;
     }
 };
 
-// PYBIND MODULE DELCARATION
+// Canonical iterator: yields (position, strand) tuples
+class PyCanonicalSyncmerIterator
+{
+private:
+    CsyncmerIteratorCanonical64* iterator;
+public:
+    PyCanonicalSyncmerIterator(const std::string& sequence, size_t k, size_t s) {
+        iterator = csyncmer_iterator_create_canonical_64(
+            sequence.data(), sequence.size(), k, s);
+        if (!iterator) {
+            throw std::runtime_error(
+                "Failed to create canonical syncmer iterator. "
+                "Check that len(sequence) >= k and 0 < s < k.");
+        }
+    }
 
-PYBIND11_MODULE(_bindings, m){
-    m.doc() = "Fast syncmer generation using nthash on single thread.";
+    ~PyCanonicalSyncmerIterator() {
+        if (iterator) {
+            csyncmer_iterator_destroy_canonical_64(iterator);
+        }
+    }
 
-    // Binding of the iterator class
-    py::class_<PySyncmerIterator>(m,"SyncmerIterator")
-        .def(py::init<std::string&, size_t, size_t>(),
-            py::arg("sequence"), py::arg("k"), py::arg("s"),
-            "Create a syncmer iterator\n\n"
-            "Parameters\n"
-            "sequence: str\n"
-            "   DNA sequence (ACGT)\n"
-            "k: int\n"
-            "   k-mer size\n"
-            "s: int\n"
-            "   s-mer size\n (must be < k)")
-        .def("__iter__", &PySyncmerIterator::iter)
-        .def("__next__", &PySyncmerIterator::next)
-        .def("get_all_syncmers", &PySyncmerIterator::get_all_syncmers, "A function that returns all syncmer as 3 numpy vectors.");
+    PyCanonicalSyncmerIterator(const PyCanonicalSyncmerIterator&) = delete;
+    PyCanonicalSyncmerIterator& operator=(const PyCanonicalSyncmerIterator&) = delete;
+
+    PyCanonicalSyncmerIterator& iter() { return *this; }
+
+    py::tuple next() {
+        size_t pos;
+        int strand;
+        if (csyncmer_iterator_next_canonical_64(iterator, &pos, &strand)) {
+            return py::make_tuple(pos, strand);
+        }
+        throw py::stop_iteration();
+    }
+
+    py::tuple get_all_positions() {
+        std::vector<uint64_t> positions;
+        std::vector<uint8_t> strands;
+        size_t pos;
+        int strand;
+        while (csyncmer_iterator_next_canonical_64(iterator, &pos, &strand)) {
+            positions.push_back(static_cast<uint64_t>(pos));
+            strands.push_back(static_cast<uint8_t>(strand));
+        }
+        py::array_t<uint64_t> pos_arr(positions.size());
+        py::array_t<uint8_t> strand_arr(strands.size());
+        std::memcpy(pos_arr.mutable_data(), positions.data(),
+                     positions.size() * sizeof(uint64_t));
+        std::memcpy(strand_arr.mutable_data(), strands.data(),
+                     strands.size() * sizeof(uint8_t));
+        return py::make_tuple(pos_arr, strand_arr);
+    }
+};
+
+// Module-level count functions wrapping SIMD
+static size_t count_syncmers(const std::string& sequence, size_t k, size_t s) {
+    return csyncmer_twostack_simd_32_count(sequence.data(), sequence.size(), k, s);
 }
 
+static size_t count_syncmers_canonical(const std::string& sequence, size_t k, size_t s) {
+    return csyncmer_twostack_simd_32_canonical_count(sequence.data(), sequence.size(), k, s);
+}
+
+PYBIND11_MODULE(_bindings, m) {
+    m.doc() = "Fast closed syncmer detection using ntHash rolling hash.";
+
+    py::class_<PySyncmerIterator>(m, "SyncmerIterator")
+        .def(py::init<const std::string&, size_t, size_t>(),
+            py::arg("sequence"), py::arg("k"), py::arg("s"),
+            "Create a forward-only syncmer iterator.\n\n"
+            "Yields syncmer positions (0-based) in the sequence.\n\n"
+            "Parameters\n"
+            "----------\n"
+            "sequence : str\n"
+            "    DNA sequence (ACGT)\n"
+            "k : int\n"
+            "    k-mer size\n"
+            "s : int\n"
+            "    s-mer size (must be < k)")
+        .def("__iter__", &PySyncmerIterator::iter)
+        .def("__next__", &PySyncmerIterator::next)
+        .def("get_all_positions", &PySyncmerIterator::get_all_positions,
+             "Return all syncmer positions as a numpy uint64 array.");
+
+    py::class_<PyCanonicalSyncmerIterator>(m, "CanonicalSyncmerIterator")
+        .def(py::init<const std::string&, size_t, size_t>(),
+            py::arg("sequence"), py::arg("k"), py::arg("s"),
+            "Create a canonical (strand-independent) syncmer iterator.\n\n"
+            "Yields (position, strand) tuples where strand is 0=forward, 1=RC.\n\n"
+            "Parameters\n"
+            "----------\n"
+            "sequence : str\n"
+            "    DNA sequence (ACGT)\n"
+            "k : int\n"
+            "    k-mer size\n"
+            "s : int\n"
+            "    s-mer size (must be < k)")
+        .def("__iter__", &PyCanonicalSyncmerIterator::iter)
+        .def("__next__", &PyCanonicalSyncmerIterator::next)
+        .def("get_all_positions", &PyCanonicalSyncmerIterator::get_all_positions,
+             "Return all syncmer positions and strands as (numpy uint64 array, numpy uint8 array).");
+
+    m.def("count_syncmers", &count_syncmers,
+          py::arg("sequence"), py::arg("k"), py::arg("s"),
+          "Count syncmers using SIMD-accelerated TWOSTACK (approximate, 32-bit hash).\n\n"
+          "Returns the number of closed syncmers in the sequence.");
+
+    m.def("count_syncmers_canonical", &count_syncmers_canonical,
+          py::arg("sequence"), py::arg("k"), py::arg("s"),
+          "Count canonical syncmers using SIMD-accelerated TWOSTACK (approximate, 32-bit hash).\n\n"
+          "Returns the number of strand-independent closed syncmers in the sequence.");
+}

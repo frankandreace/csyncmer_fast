@@ -126,7 +126,8 @@ docker-compose run python-build
 
 ### References
 
-- [simd-minimizers](https://github.com/Daniel-Liu-c0deb0t/simd-minimizers) - TWOSTACK algorithm inspiration
+- [Edgar RC (2021) "Syncmers are more sensitive than minimizers for selecting conserved k-mers in biological sequences." PeerJ 9:e10805](https://peerj.com/articles/10805/) - Original syncmer definition
+- [simd-minimizers](https://github.com/rust-seq/simd-minimizers) - TWOSTACK algorithm inspiration
 - [Curiouscoding: Fast Minimizers](https://curiouscoding.nl/posts/fast-minimizers/)
 - [Sliding Window Minimum Algorithm](https://github.com/keegancsmith/Sliding-Window-Minimum)
 - [SYNG (Durbin)](https://github.com/richarddurbin/syng/)

@@ -10,7 +10,7 @@
 // SEQHASH-BASED SYNCMER IMPLEMENTATIONS
 // ============================================================================
 
-void compute_closed_syncmers_rescan_iterator(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
+void csyncmer_seqhash_rescan_iterator(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
     if(length < K) {
         fprintf(stderr, "Sequence length is less than K\n");
         return;
@@ -35,7 +35,7 @@ void compute_closed_syncmers_rescan_iterator(char *sequence_input, size_t length
     printf("[RESCAN_ITERATOR]:: COMPUTED %llu CLOSED SYNCMERS\n", computed_syncmer) ;
 }
 
-void compute_closed_syncmers_branchless(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
+void csyncmer_seqhash_rescan_branchless(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
     if (length < K){
         printf("SEQUENCE SMALLER THAN K.\n") ;
         return ;
@@ -96,7 +96,7 @@ void compute_closed_syncmers_branchless(char *sequence_input, size_t length, siz
     *num_syncmer = computed_syncmers;
 }
 
-void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
+void csyncmer_seqhash_rescan_circular(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer){
     if (length < K){
         printf("SEQUENCE SMALLER THAN K.\n") ;
         return ;
@@ -159,7 +159,7 @@ void compute_closed_syncmers(char *sequence_input, size_t length, size_t K, size
     *num_syncmer = computed_syncmers;
 }
 
-void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
+void csyncmer_seqhash_naive(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
     if(length < K) {
         fprintf(stderr, "Sequence length is less than K\n");
         return;
@@ -217,7 +217,7 @@ void compute_closed_syncmers_naive(char *sequence_input, size_t length, size_t K
     printf("[NAIVE]:: HASHED %lu S-MERS\n", computed_smers) ;
 }
 
-void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length, size_t K, size_t S, size_t *num_syncmer){
+void csyncmer_seqhash_rescan_array(char *sequence_input, size_t sequence_length, size_t K, size_t S, size_t *num_syncmer){
     #define ARRAYSIZE 17
     if (sequence_length < K){
         printf("SEQUENCE SMALLER THAN K.\n") ;
@@ -357,7 +357,7 @@ void compute_closed_syncmers_rescan(char *sequence_input, size_t sequence_length
     *num_syncmer = computed_syncmers;
 }
 
-void compute_closed_syncmers_deque_rayan(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
+void csyncmer_seqhash_deque(char *sequence_input, size_t length, size_t K, size_t S, size_t *num_syncmer) {
     if(length < K) {
         fprintf(stderr, "Sequence length is less than K\n");
         return;

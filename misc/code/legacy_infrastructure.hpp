@@ -452,8 +452,6 @@ static void process_chunk_and_cacheS(SyncmerIteratorS *si){
                 memmove(si->orientation_buffer, si->orientation_buffer + i - si->window_size + 1, si->start_fill * sizeof(bool));
                 si->cache_full++;
                 si->kmer_position++;
-                // return
-                printf("RETURNING WITH CACHE FULL. cache count: %lu ; cache_index: %lu.\n",si->cache_count,si->cache_index);
                 return;
             }
         }
@@ -876,8 +874,6 @@ bool syncmer_iterator_next(SyncmerIterator * si, Syncmer128 * syncmer){
     while(si->cache_count == 0){
         // If no more s-mers, signal computation ended
         if( si->smers_remaining == 0){
-            printf("Cache was full %lu times.\n", si->cache_full);
-            // printf("Num computed s-mers: %lu\n", si->num_rolls);
             si->is_done = true;
             return false;
         }

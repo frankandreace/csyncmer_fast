@@ -10,9 +10,9 @@
 // - SIMD multi-window implementation (from deprecated_simd_mw.h)
 
 #include "legacy_infrastructure.hpp"
-#include "../simd/vec.hpp"
-#include "../simd/nthash.hpp"
-#include "../simd/hash_simd.hpp"
+#include "simd/vec.hpp"
+#include "simd/nthash.hpp"
+#include "simd/hash_simd.hpp"
 
 namespace csyncmer_nthash32 {
 
@@ -61,8 +61,61 @@ inline constexpr std::array<uint8_t, 256> make_ascii_to_idx_local() {
 // SYNCMER IMPLEMENTATIONS
 // ============================================================================
 
+/// Naive O(N*W) implementation - compute each hash from scratch, scan each window
+inline size_t csyncmer_nthash32_naive(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S,
+    size_t* num_syncmers
+) {
+    if (length < K) {
+        *num_syncmers = 0;
+        return 0;
+    }
+
+    static const auto F_ASCII = make_ascii_hash_table_local();
+
+    size_t window_size = K - S + 1;
+    size_t num_smers = length - S + 1;
+    size_t num_kmers = length - K + 1;
+
+    const uint8_t* seq = reinterpret_cast<const uint8_t*>(sequence);
+
+    // Compute all s-mer hashes from scratch (no rolling hash)
+    std::vector<uint32_t> smer_hashes(num_smers);
+    for (size_t i = 0; i < num_smers; ++i) {
+        uint32_t h = 0;
+        for (size_t j = 0; j < S; ++j) {
+            h = csyncmer_simd::hash::detail::rotl7(h) ^ F_ASCII[seq[i + j]];
+        }
+        smer_hashes[i] = h;
+    }
+
+    // O(N*W) scan to find syncmers
+    size_t syncmer_count = 0;
+    for (size_t i = 0; i < num_kmers; ++i) {
+        uint32_t min_hash = UINT32_MAX;
+        size_t min_pos = 0;
+        for (size_t j = 0; j < window_size; ++j) {
+            if (smer_hashes[i + j] < min_hash) {
+                min_hash = smer_hashes[i + j];
+                min_pos = j;
+            }
+        }
+        if (min_pos == 0 || min_pos == window_size - 1) {
+            syncmer_count++;
+        }
+    }
+
+    *num_syncmers = syncmer_count;
+    printf("[NTHASH32_NAIVE]:: COMPUTED %lu CLOSED SYNCMERS\n", syncmer_count);
+    printf("[NTHASH32_NAIVE]:: HASHED %lu S-MERS\n", num_smers);
+    return syncmer_count;
+}
+
 /// 2-bit encoding + precompute all hashes + RESCAN
-inline size_t compute_closed_syncmers_nthash32_2bit_rescan(
+inline size_t csyncmer_nthash32_2bit_rescan(
     const char* sequence,
     size_t length,
     size_t K,
@@ -137,7 +190,7 @@ inline size_t compute_closed_syncmers_nthash32_2bit_rescan(
 }
 
 /// 2-bit encoding + precompute all hashes + DEQUE
-inline size_t compute_closed_syncmers_nthash32_2bit_deque(
+inline size_t csyncmer_nthash32_2bit_deque(
     const char* sequence,
     size_t length,
     size_t K,
@@ -192,7 +245,7 @@ inline size_t compute_closed_syncmers_nthash32_2bit_deque(
 }
 
 /// Direct ASCII + precompute all hashes + RESCAN
-inline size_t compute_closed_syncmers_nthash32_direct_rescan(
+inline size_t csyncmer_nthash32_direct_rescan(
     const char* sequence,
     size_t length,
     size_t K,
@@ -280,7 +333,7 @@ inline size_t compute_closed_syncmers_nthash32_direct_rescan(
 }
 
 /// Fused hash + deque (single pass, no large buffer)
-inline size_t compute_closed_syncmers_nthash32_fused_deque(
+inline size_t csyncmer_nthash32_fused_deque(
     const char* sequence,
     size_t length,
     size_t K,
@@ -355,7 +408,7 @@ inline size_t compute_closed_syncmers_nthash32_fused_deque(
 }
 
 /// Fused hash + RESCAN (single pass, circular buffer)
-inline size_t compute_closed_syncmers_nthash32_fused_rescan(
+inline size_t csyncmer_nthash32_fused_rescan(
     const char* sequence,
     size_t length,
     size_t K,
@@ -445,7 +498,7 @@ inline size_t compute_closed_syncmers_nthash32_fused_rescan(
 }
 
 /// Van Herk/Gil-Werman O(1) block algorithm
-inline size_t compute_closed_syncmers_nthash32_vanherk(
+inline size_t csyncmer_nthash32_vanherk(
     const char* sequence,
     size_t length,
     size_t K,
@@ -601,7 +654,7 @@ inline std::pair<uint32_t, size_t> simd_argmin_window(
 }
 
 /// Fused hash + SIMD RESCAN
-inline size_t compute_closed_syncmers_nthash32_simd_rescan(
+inline size_t csyncmer_nthash32_simd_rescan(
     const char* sequence,
     size_t length,
     size_t K,
@@ -689,7 +742,7 @@ inline size_t compute_closed_syncmers_nthash32_simd_rescan(
 // Note: This function requires csyncmer_fast.h to be included first
 // for csyncmer_rotl7, csyncmer_init_ascii_hash_table, etc.
 
-static inline size_t csyncmer_compute_simd_multiwindow(
+static inline size_t csyncmer_nthash32_simd_multiwindow(
     const char* sequence,
     size_t length,
     size_t K,
@@ -707,7 +760,7 @@ static inline size_t csyncmer_compute_simd_multiwindow(
 
     // Fall back to scalar for small inputs
     if (num_kmers < 8) {
-        return csyncmer_compute_fused_rescan_branchless(
+        return csyncmer_rescan_32_count(
             sequence, length, K, S, num_syncmers);
     }
 
@@ -717,7 +770,7 @@ static inline size_t csyncmer_compute_simd_multiwindow(
     uint32_t f_rot[4];
     csyncmer_init_ascii_hash_table(F_ASCII);
     csyncmer_init_ascii_to_idx(IDX_ASCII);
-    csyncmer_make_f_rot(S, f_rot);
+    csyncmer_make_f_rot_32(S, f_rot);
 
     // Ring buffer with extended area to eliminate wrap-around branches
     #define BUF_SIZE 64
@@ -734,7 +787,7 @@ static inline size_t csyncmer_compute_simd_multiwindow(
     // Initialize first hash directly
     uint32_t hash = 0;
     for (size_t j = 0; j < S; ++j) {
-        hash = csyncmer_rotl7(hash) ^ F_ASCII[raw_seq[j]];
+        hash = csyncmer_rotl7_32(hash) ^ F_ASCII[raw_seq[j]];
     }
     uint32_t fw = hash ^ f_rot[IDX_ASCII[raw_seq[0]]];
     buf[0] = hash;
@@ -743,7 +796,7 @@ static inline size_t csyncmer_compute_simd_multiwindow(
     // Fill initial window + first batch
     size_t init_size = window_size + 7;
     for (size_t i = 1; i < init_size; ++i) {
-        hash = csyncmer_rotl7(fw) ^ F_ASCII[raw_seq[i + S - 1]];
+        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[raw_seq[i + S - 1]];
         fw = hash ^ f_rot[IDX_ASCII[raw_seq[i]]];
         size_t buf_idx = i & BUF_MASK;
         buf[buf_idx] = hash;
@@ -778,7 +831,7 @@ static inline size_t csyncmer_compute_simd_multiwindow(
         size_t end_hash = k + 8 + 7 + window_size;
         if (end_hash > num_smers) end_hash = num_smers;
         for (; hash_count < end_hash; ++hash_count) {
-            hash = csyncmer_rotl7(fw) ^ F_ASCII[raw_seq[hash_count + S - 1]];
+            hash = csyncmer_rotl7_32(fw) ^ F_ASCII[raw_seq[hash_count + S - 1]];
             fw = hash ^ f_rot[IDX_ASCII[raw_seq[hash_count]]];
             size_t buf_idx = hash_count & BUF_MASK;
             buf[buf_idx] = hash;
@@ -790,7 +843,7 @@ static inline size_t csyncmer_compute_simd_multiwindow(
     for (; k < num_kmers; ++k) {
         size_t end_hash = k + window_size;
         for (; hash_count < end_hash; ++hash_count) {
-            hash = csyncmer_rotl7(fw) ^ F_ASCII[raw_seq[hash_count + S - 1]];
+            hash = csyncmer_rotl7_32(fw) ^ F_ASCII[raw_seq[hash_count + S - 1]];
             fw = hash ^ f_rot[IDX_ASCII[raw_seq[hash_count]]];
             size_t buf_idx = hash_count & BUF_MASK;
             buf[buf_idx] = hash;

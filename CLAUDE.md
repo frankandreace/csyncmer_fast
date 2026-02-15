@@ -1,99 +1,6 @@
-# csyncmer_fast
+# csyncmer_fast - Internal Development Notes
 
-Fast closed syncmer detection using ntHash. Pure C header-only library with AVX2 SIMD support.
-
-## Quick Start
-
-```c
-#include "csyncmer_fast.h"
-
-// TWOSTACK: fastest (~600 MB/s), AVX2, ~99.99996% accurate
-size_t count = csyncmer_compute_twostack_simd_32_count(seq, len, K, S);
-
-// Canonical TWOSTACK: strand-independent (~550 MB/s), AVX2
-size_t canon_count = csyncmer_compute_twostack_simd_32_canonical_count(seq, len, K, S);
-
-// Canonical TWOSTACK with positions and strands (~180 MB/s), AVX2
-uint32_t positions[10000];
-uint8_t strands[10000];
-size_t n = csyncmer_compute_twostack_simd_32_canonical(seq, len, K, S, positions, strands, 10000);
-for (size_t i = 0; i < n; i++) {
-    // positions[i]: syncmer position, strands[i]: 0=forward, 1=RC had minimal s-mer
-}
-
-// Iterator: scalar, portable, exact results (~165 MB/s)
-CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
-size_t pos;
-while (csyncmer_iterator_next_64(iter, &pos)) {
-    // process syncmer at seq[pos..pos+K)
-}
-csyncmer_iterator_destroy_64(iter);
-
-// Canonical iterator: strand-independent (~130 MB/s), scalar
-CsyncmerIteratorCanonical64* citer = csyncmer_iterator_create_canonical_64(seq, len, K, S);
-int strand;
-while (csyncmer_iterator_next_canonical_64(citer, &pos, &strand)) {
-    // pos: syncmer position, strand: 0=forward, 1=RC had minimal s-mer
-}
-csyncmer_iterator_destroy_canonical_64(citer);
-```
-
-## Project Structure
-
-```
-csyncmer_fast.h          # Main header (pure C, header-only)
-misc/
-  tests/                 # Tests and benchmarks (test.cpp, benchmark.cpp)
-  legacy/                # Deprecated implementations (organized by hash type)
-  simd/                  # SIMD utilities (legacy C++)
-  syng/                  # External syng library (seqhash)
-  python/                # Python bindings
-```
-
-## Implementations in csyncmer_fast.h
-
-### 32-bit ntHash TWOSTACK (fastest)
-| Function | Type | Speed | Description |
-|----------|------|-------|-------------|
-| `csyncmer_compute_twostack_simd_32_count` | Batch | ~550-635 MB/s | Count only, AVX2 |
-| `csyncmer_compute_twostack_simd_32` | Batch | ~250-290 MB/s | With positions, AVX2 |
-| `csyncmer_compute_twostack_simd_32_canonical_count` | Batch | ~500-570 MB/s | Canonical count, AVX2 |
-| `csyncmer_compute_twostack_simd_32_canonical` | Batch | ~170-200 MB/s | Canonical with positions/strands, AVX2 |
-
-### 64-bit ntHash (scalar, portable, exact)
-| Function | Type | Speed | Description |
-|----------|------|-------|-------------|
-| `csyncmer_iterator_create/next/destroy_64` | Iterator | ~145-160 MB/s | Forward-only, scalar, O(1) amortized |
-| `csyncmer_iterator_create/next/destroy_canonical_64` | Iterator | ~100-110 MB/s | Strand-independent (canonical), scalar |
-
-### 32-bit ntHash (internal)
-| Function | Type | Speed | Description |
-|----------|------|-------|-------------|
-| `csyncmer_compute_fused_rescan_branchless` | Batch | ~110-155 MB/s | TWOSTACK fallback |
-
-## Key Algorithms
-
-### RESCAN (Scalar)
-- O(1) amortized: only rescans window when minimum falls out (~6% of iterations)
-- Branch-free minimum update using conditional moves
-- Circular buffer with power-of-2 size for fast modulo
-
-### TWOSTACK (Fastest)
-- Two-stack sliding minimum algorithm with O(1) amortized operations
-- Splits sequence into 8 chunks processed in parallel with AVX2
-- Packs hash (upper 16 bits) + position (lower 16 bits) for SIMD comparison
-- Falls back to RESCAN for small inputs or window_size > 64
-- Canonical variant computes both forward and RC hashes in parallel, uses min(fw, rc)
-
-### Iterator
-- Shared static lookup tables (~2KB saved per iterator)
-- Local variable caching for register allocation
-- Same RESCAN algorithm as batch
-
-### Canonical Iterator
-- Pre-computed `rotr7(RC[base])` table eliminates one rotation per iteration
-- ILP restructuring: forward and RC computations interleaved for parallel execution
-- Fused comparison for hash selection and strand detection
+See README.md for user-facing documentation.
 
 ## Testing & Benchmarking
 
@@ -101,7 +8,7 @@ misc/
 cd misc/tests
 make clean && make
 
-# Correctness tests (uses included 100kbp test file)
+# Correctness tests
 ./test test_100kbp.fasta 31 15
 
 # Quick performance benchmark
@@ -112,39 +19,93 @@ make clean && make
 ./benchmark ~/data/human.chr19.fasta 31 15 out.txt
 ```
 
-## Optimization Notes
+## Key Algorithms
 
-### TWOSTACK Algorithm
-
-The fastest implementation uses the simd-minimizers approach:
-- Splits sequence into 8 independent chunks processed in parallel with AVX2
-- Uses two-stack (prefix-suffix) sliding minimum algorithm: O(1) amortized
+### TWOSTACK (Fastest)
+- Two-stack sliding minimum with O(1) amortized operations
+- Splits sequence into 8 chunks processed in parallel with AVX2
 - Packs hash (upper 16 bits) + position (lower 16 bits) for SIMD comparison
+- Falls back to RESCAN for small inputs or window_size > 64
+- Canonical variant computes both forward and RC hashes in parallel
 
-**Limitation**: Uses 16-bit hash comparison, which can cause ~0.00004% error rate when two s-mers have identical upper 16 bits but different lower 16 bits. For exact results, use the 64-bit RESCAN implementation.
-
-### RESCAN Algorithm
-
-The 64-bit Iterator uses the RESCAN algorithm internally:
+### RESCAN (Scalar Iterator)
 - O(1) amortized: only rescans window when minimum falls out (~6% of iterations)
 - Branch-free minimum update using conditional moves
 - Circular buffer with power-of-2 size for fast modulo
 
-### Performance Comparison
+### Canonical Implementation
+- Pre-computed `rotr7(RC[base])` table eliminates one rotation per iteration
+- `prev_remove_base` tracking for correct RC rolling direction
+- ILP restructuring: forward and RC computations interleaved
 
-| Implementation | Speed | Exact? | Use Case |
-|----------------|-------|--------|----------|
-| TWOSTACK (32-bit) | ~550-635 MB/s | ~99.99996% | High throughput, AVX2 required |
-| TWOSTACK Canonical (32-bit) | ~500-570 MB/s | ~99.99996% | Strand-independent, AVX2 |
-| Iterator (64-bit) | ~145-165 MB/s | 100% | Exact results, scalar, portable |
-| Canonical Iterator (64-bit) | ~100-130 MB/s | 100% | Strand-independent results, portable |
+## Implementation Details
 
-## Notes
+### Rolling Hash Formulas
 
-- Different hash sizes (32/64-bit) produce different syncmer counts due to different tie-breaking
-- TWOSTACK is fastest but requires AVX2 and uses 16-bit hash approximation
-- Canonical TWOSTACK SIMD is 4-5x faster than scalar canonical iterator
-- Iterator is scalar (no SIMD) - works on any CPU including ARM
-- Canonical implementations use min(forward, reverse_complement) hash for strand independence
-- Canonical implementations track which strand (forward=0, RC=1) had the minimal s-mer
-- Deprecated implementations are archived in `misc/legacy/`
+**Forward rolling:**
+```c
+fw_state = fw_hash ^ f_rot[old_first]
+fw_hash = rotl7(fw_state) ^ F[new_last]
+```
+
+**RC rolling:**
+```c
+rc_hash = rotr7(rc_hash) ^ rotr7(RC[old_first]) ^ c_rot[new_last]
+```
+
+### SIMD Lookup Tables
+
+```c
+CSYNCMER_SIMD_F32[8]       // F[A,C,T,G] repeated 2x for permutevar
+CSYNCMER_SIMD_RC32[8]      // RC[A,C,T,G] = F[T,G,A,C] repeated 2x
+CSYNCMER_SIMD_RC32_ROTR7[8] // Pre-computed rotr7(RC[base])
+```
+
+### Chunk Validity Fix
+
+When `chunk_ends[i] < chunk_starts[i]` (boundary chunks), compute `last_lane_limit` as minimum across all valid lanes to avoid counting invalid k-mers.
+
+## Performance Notes
+
+- 16-bit hash approximation causes ~0.00004% error rate
+- Canonical SIMD is 4-5x faster than scalar canonical iterator
+- Count-only variants are ~2x faster than position-collecting variants
+- Different hash sizes (32/64-bit) produce different syncmer counts due to tie-breaking
+
+## Benchmark Speeds
+
+### Realistic TWOSTACK Speeds
+
+- **~550-600 MB/s** cold (first call, data not in CPU cache)
+- **~630-660 MB/s** warm (after repeated calls, data in L2/L3)
+- Binary size (.text) has negligible impact: a 7KB minimal binary and the 214KB full benchmark binary produce the same speeds when measured correctly
+
+### Benchmarking Pitfall: Dead Code Elimination
+
+When the return value of `csyncmer_twostack_simd_32_count` is discarded, GCC `-O3` creates a stripped `.isra` clone that eliminates the entire TWOSTACK algorithm (0 AVX2 instructions vs 153 in the real function). This produces bogus speeds of 1200-1500 MB/s. Always use `volatile` or otherwise consume the result when benchmarking.
+
+## TG-count Optimization (Investigated, Not Applicable)
+
+The simd-minimizers library uses TG-count for strand selection:
+- Counts (TG - AC) bases in each window
+- If TG > AC, the RC strand is "preferred" for consistent minimizer reporting
+- This is for **strand preference**, not hash computation
+
+For canonical syncmers, this approach doesn't apply because:
+- We need `min(forward_hash, rc_hash)` as the actual hash value
+- ntHash is position-dependent, so TG-count can't predict which hash is smaller
+- We must compute both hashes to find the minimum s-mer position
+
+**Key insight**: simd-minimizers' "canonical" is a boolean (which strand to report), while our "canonical" is a hash value (minimum of two hashes).
+
+## Project Structure
+
+```
+csyncmer_fast.h          # Main header (pure C, header-only)
+misc/
+  tests/                 # Tests and benchmarks (test.cpp, benchmark.cpp)
+  code/                  # Reference implementations (32/64/128-bit variants)
+    simd/                # C++ SIMD utilities (used by reference implementations)
+  syng/                  # External syng library (seqhash)
+  python/                # Python bindings
+```

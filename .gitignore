@@ -25,5 +25,5 @@ example
 # Editor files
 *.swp
 
-# Claude Code
-CLAUDE.md
+# Precompiled headers
+*.gch

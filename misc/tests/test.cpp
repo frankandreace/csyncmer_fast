@@ -6,10 +6,10 @@
 #include <stdlib.h>
 
 #include "../../csyncmer_fast.h"
-#include "../legacy/syncmer_seqhash.hpp"
-#include "../legacy/syncmer_nthash32.hpp"
-#include "../legacy/syncmer_nthash64.hpp"
-#include "../legacy/syncmer_nthash128.hpp"
+#include "../code/syncmer_seqhash.hpp"
+#include "../code/syncmer_nthash32.hpp"
+#include "../code/syncmer_nthash64.hpp"
+#include "../code/syncmer_nthash128.hpp"
 #include "../syng/syng_syncmers.h"
 #include "fasta_reader.h"
 
@@ -193,45 +193,45 @@ size_t count_syncmer_deque_nthash(const char *sequence_input, size_t length, siz
 
 size_t count_nthash32_syncmers_rescan(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_2bit_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_2bit_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 
 size_t count_nthash32_syncmers_deque(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_2bit_deque(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_2bit_deque(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 
 size_t count_nthash32_syncmers_direct(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_direct_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_direct_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 
 size_t count_nthash32_syncmers_fused(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_fused_deque(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_fused_deque(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 
 size_t count_nthash32_syncmers_fused_rescan(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_fused_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_fused_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 
 #if defined(__AVX2__)
 size_t count_nthash32_syncmers_fused_simd(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_simd_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_simd_rescan(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 #endif
 
 size_t count_nthash32_syncmers_vanherk(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    compute_closed_syncmers_nthash32_vanherk(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_vanherk(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     return num_syncmers;
 }
 
@@ -271,14 +271,14 @@ size_t count_nthash64_syncmers_canonical_iterator(const char *sequence_input, si
 // Wrapper for the canonical 64-bit deque implementation in legacy
 size_t count_nthash64_syncmers_canonical_deque(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    csyncmer_compute_canonical_deque_64(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash64_canonical_deque(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     printf("[NTHASH64_CANONICAL_DEQUE]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
 
 size_t count_nthash64_rescan_count(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    csyncmer_compute_fused_rescan_branchless_64_count(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash64_rescan_count(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     printf("[NTHASH64_RESCAN_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
@@ -286,14 +286,14 @@ size_t count_nthash64_rescan_count(const char *sequence_input, size_t K, size_t 
 #if defined(__AVX2__)
 size_t count_nthash64_simd_multiwindow(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    csyncmer_compute_simd_multiwindow_64(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash64_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     printf("[NTHASH64_SIMD_MW]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
 
 size_t count_nthash32_simd_multiwindow(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
-    csyncmer_compute_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    csyncmer_nthash32_simd_multiwindow(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
     printf("[NTHASH32_SIMD_MW]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
@@ -306,7 +306,7 @@ size_t count_nthash32_syncmers_twostack_simd(const char *sequence_input, size_t 
     uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
     if (!positions) return 0;
 
-    size_t num_syncmers = csyncmer_compute_twostack_simd_32(sequence_input, len, K, S, positions, max_positions);
+    size_t num_syncmers = csyncmer_twostack_simd_32_positions(sequence_input, len, K, S, positions, max_positions);
     printf("[NTHASH32_TWOSTACK_SIMD]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     free(positions);
     return num_syncmers;
@@ -318,7 +318,7 @@ size_t count_nthash32_syncmers_simd_positions(const char *sequence_input, size_t
     uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
     if (!positions) return 0;
 
-    size_t num_syncmers = csyncmer_compute_twostack_simd_32(sequence_input, len, K, S, positions, max_positions);
+    size_t num_syncmers = csyncmer_twostack_simd_32_positions(sequence_input, len, K, S, positions, max_positions);
     printf("[NTHASH32_SYNCMERS_SIMD]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
 
     free(positions);
@@ -327,7 +327,7 @@ size_t count_nthash32_syncmers_simd_positions(const char *sequence_input, size_t
 
 size_t count_nthash32_canonical_twostack_simd_count(const char *sequence_input, size_t K, size_t S) {
     size_t len = strlen(sequence_input);
-    size_t num_syncmers = csyncmer_compute_twostack_simd_32_canonical_count(sequence_input, len, K, S);
+    size_t num_syncmers = csyncmer_twostack_simd_32_canonical_count(sequence_input, len, K, S);
     printf("[NTHASH32_CANONICAL_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", num_syncmers);
     return num_syncmers;
 }
@@ -344,7 +344,7 @@ size_t count_nthash32_canonical_twostack_simd_positions(const char *sequence_inp
         return 0;
     }
 
-    size_t num_syncmers = csyncmer_compute_twostack_simd_32_canonical(
+    size_t num_syncmers = csyncmer_twostack_simd_32_canonical_positions(
         sequence_input, len, K, S, positions, strands, max_positions);
 
     *fw_count = 0;
@@ -393,18 +393,22 @@ int run_correctness_check(char *sequence_input, int K, int S){
     size_t num_nt_deque;
 
     printf("=== TESTING SEQHASH-BASED IMPLEMENTATIONS (64-bit) ===\n");
-    compute_closed_syncmers_naive(encoded_seq, len, K, S, &num_naive);
-    compute_closed_syncmers(encoded_seq, len, K, S, &num_circular_array);
-    compute_closed_syncmers_rescan(encoded_seq, len, K, S, &num_large_array);
-    compute_closed_syncmers_deque_rayan(encoded_seq, len, K, S, &num_deque);
-    compute_closed_syncmers_rescan_iterator(encoded_seq, len, K, S, &num_iterator);
-    compute_closed_syncmers_branchless(encoded_seq, len, K, S, &num_branchless);
+    csyncmer_seqhash_naive(encoded_seq, len, K, S, &num_naive);
+    csyncmer_seqhash_rescan_circular(encoded_seq, len, K, S, &num_circular_array);
+    csyncmer_seqhash_rescan_array(encoded_seq, len, K, S, &num_large_array);
+    csyncmer_seqhash_deque(encoded_seq, len, K, S, &num_deque);
+    csyncmer_seqhash_rescan_iterator(encoded_seq, len, K, S, &num_iterator);
+    csyncmer_seqhash_rescan_branchless(encoded_seq, len, K, S, &num_branchless);
 
     printf("\n=== TESTING NTHASH-BASED IMPLEMENTATIONS (128-bit) ===\n");
     num_nt_generator = count_syncmer_generator_nthash(sequence_input, K, S);
     num_nt_deque = count_syncmer_deque_nthash(sequence_input, len, K, S);
+    size_t num_nt_naive;
+    csyncmer_nthash128_naive(sequence_input, len, K, S, &num_nt_naive);
 
     printf("\n=== TESTING NTHASH32 IMPLEMENTATION (32-bit) ===\n");
+    size_t num_nthash32_naive;
+    csyncmer_nthash32_naive(sequence_input, len, K, S, &num_nthash32_naive);
     size_t num_nthash32_2bit_rescan = count_nthash32_syncmers_rescan(sequence_input, K, S);
     size_t num_nthash32_2bit_deque = count_nthash32_syncmers_deque(sequence_input, K, S);
     size_t num_nthash32_direct_rescan = count_nthash32_syncmers_direct(sequence_input, K, S);
@@ -431,6 +435,10 @@ int run_correctness_check(char *sequence_input, int K, int S){
         printf("[NTHASH32 ERROR] RESCAN: %lu ; FUSED_RESCAN: %lu\n", num_nthash32_2bit_rescan, num_nthash32_fused_rescan);
         nthash32_ok = false;
     }
+    if (num_nthash32_2bit_rescan != num_nthash32_naive) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; NAIVE: %lu\n", num_nthash32_2bit_rescan, num_nthash32_naive);
+        nthash32_ok = false;
+    }
 #if defined(__AVX2__)
     size_t num_nthash32_simd_rescan = count_nthash32_syncmers_fused_simd(sequence_input, K, S);
     if (num_nthash32_2bit_rescan != num_nthash32_simd_rescan) {
@@ -447,8 +455,16 @@ int run_correctness_check(char *sequence_input, int K, int S){
     // Test ntHash64 implementations (scalar, portable, exact)
     printf("\n=== TESTING NTHASH64 IMPLEMENTATIONS (64-bit, scalar, exact) ===\n");
     bool nthash64_ok = true;
+    size_t num_nthash64_naive;
+    csyncmer_nthash64_naive(sequence_input, len, K, S, &num_nthash64_naive);
     size_t num_nthash64_iter = count_nthash64_syncmers_iterator(sequence_input, K, S);
     size_t num_nthash64_rescan = count_nthash64_rescan_count(sequence_input, K, S);
+
+    // Naive uses full 64-bit comparison, should match iterator exactly
+    if (num_nthash64_iter != num_nthash64_naive) {
+        printf("[NTHASH64 ERROR] ITERATOR: %lu ; NAIVE: %lu\n", num_nthash64_iter, num_nthash64_naive);
+        nthash64_ok = false;
+    }
 
     // Note: 64-bit rescan uses lower 32-bits for comparison, so may differ from iterator
     // We just verify it runs without crashing; the iterator is the reference
@@ -504,7 +520,7 @@ int run_correctness_check(char *sequence_input, int K, int S){
     printf("\n=== TESTING NTHASH32 CANONICAL SIMD IMPLEMENTATIONS ===\n");
 
     // Get 32-bit scalar canonical as reference (same hash values as SIMD)
-    size_t num_nthash32_canonical_scalar = csyncmer_compute_canonical_rescan_32_count(
+    size_t num_nthash32_canonical_scalar = csyncmer_canonical_rescan_32_count(
         sequence_input, strlen(sequence_input), K, S);
     printf("[NTHASH32_CANONICAL_SCALAR]:: COMPUTED %zu CLOSED SYNCMERS\n", num_nthash32_canonical_scalar);
 
@@ -562,19 +578,23 @@ int run_correctness_check(char *sequence_input, int K, int S){
         printf("[NTHASH ERROR] GENERATOR: %lu ; DEQUE: %lu\n", num_nt_generator, num_nt_deque);
         nthash_ok = false;
     }
+    if (num_nt_generator != num_nt_naive){
+        printf("[NTHASH ERROR] GENERATOR: %lu ; NAIVE: %lu\n", num_nt_generator, num_nt_naive);
+        nthash_ok = false;
+    }
 
     // Report results
 #if defined(__AVX2__)
-    int nthash32_count = 10;  // rescan, deque, direct, fused_deque, fused_rescan, simd_rescan, vanherk, twostack, simd_pos, simd_mw
-    int nthash64_count = 4;   // iterator, rescan_count, simd_mw, canonical
+    int nthash32_count = 11;  // naive, rescan, deque, direct, fused_deque, fused_rescan, simd_rescan, vanherk, twostack, simd_pos, simd_mw
+    int nthash64_count = 5;   // naive, iterator, rescan_count, simd_mw, canonical
 #else
-    int nthash32_count = 6;   // rescan, deque, direct, fused_deque, fused_rescan, vanherk
-    int nthash64_count = 3;   // iterator, rescan_count, canonical
+    int nthash32_count = 7;   // naive, rescan, deque, direct, fused_deque, fused_rescan, vanherk
+    int nthash64_count = 4;   // naive, iterator, rescan_count, canonical
 #endif
 
     if (seqhash_ok && nthash_ok && nthash32_ok && nthash64_ok && canonical_ok) {
         printf("\n[CORRECTNESS] All 6 seqhash implementations agree: %lu syncmers\n", num_naive);
-        printf("[CORRECTNESS] All 2 ntHash128 implementations agree: %lu syncmers\n", num_nt_generator);
+        printf("[CORRECTNESS] All 3 ntHash128 implementations agree: %lu syncmers\n", num_nt_generator);
         printf("[CORRECTNESS] All %d ntHash32 implementations agree: %lu syncmers\n", nthash32_count, num_nthash32_2bit_rescan);
         printf("[CORRECTNESS] All %d ntHash64 implementations tested: %lu syncmers (iterator ref)\n", nthash64_count, num_nthash64_iter);
         printf("[CORRECTNESS] Both canonical implementations agree: %zu syncmers (fw: %zu, rc: %zu)\n",

@@ -11,16 +11,33 @@ const char* seq = "ACGTACGTACGT...";
 size_t len = strlen(seq);
 size_t K = 31, S = 15;
 
-// TWOSTACK: fastest (~550 MB/s), AVX2, ~99.99996% accurate
-size_t count = csyncmer_compute_twostack_simd_32_count(seq, len, K, S);
+// TWOSTACK: fastest (~600 MB/s), AVX2, ~99.99996% accurate
+size_t count = csyncmer_twostack_simd_32_count(seq, len, K, S);
 
-// Iterator: scalar, portable, exact results (~160 MB/s)
+// Canonical TWOSTACK: strand-independent (~550 MB/s), AVX2
+size_t canon_count = csyncmer_twostack_simd_32_canonical_count(seq, len, K, S);
+
+// Canonical with positions and strands (~180 MB/s), AVX2
+uint32_t positions[10000];
+uint8_t strands[10000];  // 0=forward, 1=RC had minimal s-mer
+size_t n = csyncmer_twostack_simd_32_canonical_positions(
+    seq, len, K, S, positions, strands, 10000);
+
+// Iterator: scalar, portable, exact results (~165 MB/s)
 CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
 size_t pos;
 while (csyncmer_iterator_next_64(iter, &pos)) {
     // process syncmer at seq[pos..pos+K)
 }
 csyncmer_iterator_destroy_64(iter);
+
+// Canonical iterator: strand-independent (~130 MB/s), scalar
+CsyncmerIteratorCanonical64* citer = csyncmer_iterator_create_canonical_64(seq, len, K, S);
+int strand;
+while (csyncmer_iterator_next_canonical_64(citer, &pos, &strand)) {
+    // strand: 0=forward, 1=RC had minimal s-mer
+}
+csyncmer_iterator_destroy_canonical_64(citer);
 ```
 
 Compile and run the example:
@@ -31,11 +48,23 @@ gcc -std=c11 -o example -march=native example.c
 
 ### API
 
+**Forward-only (single strand):**
+
 | Function | Output | Speed | Notes |
 |----------|--------|-------|-------|
-| `csyncmer_compute_twostack_simd_32_count` | Count | ~350-550 MB/s | AVX2, fastest, ~99.99996% accurate |
-| `csyncmer_compute_twostack_simd_32` | Positions | ~190-250 MB/s | AVX2 |
-| `csyncmer_iterator_*_64` | Positions | ~160 MB/s | Scalar, portable, exact |
+| `csyncmer_twostack_simd_32_count` | Count | ~550-635 MB/s | AVX2, fastest |
+| `csyncmer_twostack_simd_32_positions` | Positions | ~250-290 MB/s | AVX2 |
+| `csyncmer_iterator_*_64` | Positions | ~145-165 MB/s | Scalar, portable, exact |
+
+**Canonical (strand-independent):**
+
+| Function | Output | Speed | Notes |
+|----------|--------|-------|-------|
+| `csyncmer_twostack_simd_32_canonical_count` | Count | ~500-570 MB/s | AVX2 |
+| `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~170-200 MB/s | AVX2 |
+| `csyncmer_iterator_*_canonical_64` | Positions + strands | ~100-130 MB/s | Scalar, portable, exact |
+
+All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
 
 ### Benchmarking
 
@@ -59,10 +88,7 @@ A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains i
 
 **ntHash Rolling Hash**: Both 32-bit and 64-bit variants (forward-strand only, not canonical). Uses direct ASCII lookup tables to skip 2-bit encoding overhead.
 
-**Note on Hashing**: This library uses forward-strand ntHash only (not canonical).
-If you need strand-independent syncmers, you should either:
-- Process both strands separately
-- Use canonical implementations: `misc/legacy/syncmer_nthash128.hpp` or `misc/legacy/syncmer_seqhash.hpp` (slower)
+**Canonical vs Forward-only**: Canonical implementations use `min(forward_hash, rc_hash)` for strand-independent results. Use canonical when you need consistent syncmer positions regardless of which DNA strand is sequenced. Forward-only is faster when strand doesn't matter or you're processing both strands separately.
 
 ### Project Structure
 
@@ -70,15 +96,14 @@ If you need strand-independent syncmers, you should either:
 csyncmer_fast.h              # Main header: pure C, header-only
 misc/
   tests/                     # Benchmark/test suite
-  legacy/                    # Deprecated implementations
+  code/                      # Reference implementations (32/64/128-bit variants)
     syncmer_seqhash.hpp           # SeqHash (64-bit) implementations
     syncmer_nthash32.hpp          # ntHash32 algorithm variants
     syncmer_nthash64.hpp          # ntHash64 implementations
     syncmer_nthash128.hpp         # ntHash128 implementations
     legacy_infrastructure.hpp     # SeqHash, CircularArray, etc.
+    simd/                         # C++ SIMD utilities
   python/                    # Python bindings
-  scripts/                   # Testing and profiling scripts
-  simd/                      # SIMD utilities (legacy C++)
   syng/                      # External seqhash library
 ```
 
@@ -119,4 +144,6 @@ docker-compose run python-build
 - [x] Pure C implementation (no C++ dependency)
 - [x] 64-bit ntHash support
 - [x] Iterator API for incremental processing
+- [x] Canonical (strand-independent) support
+- [x] AVX2 SIMD canonical implementation
 - [ ] ARM NEON support

@@ -49,11 +49,11 @@ static const uint32_t CSYNCMER_NTHASH32_F[4] = {
     0x4be24456   // G
 };
 
-static inline uint32_t csyncmer_rotl7(uint32_t x) {
+static inline uint32_t csyncmer_rotl7_32(uint32_t x) {
     return (x << 7) | (x >> 25);
 }
 
-static inline void csyncmer_make_f_rot(size_t S, uint32_t f_rot[4]) {
+static inline void csyncmer_make_f_rot_32(size_t S, uint32_t f_rot[4]) {
     // ntHash uses (k-1)*R rotation, matching nthash.hpp::make_f_rot
     uint32_t rot = (uint32_t)(((S - 1) * 7) & 31);
     for (int i = 0; i < 4; i++) {
@@ -86,7 +86,7 @@ static inline void csyncmer_init_ascii_to_idx(uint8_t table[256]) {
 // Scalar Implementation: Fused RESCAN with Branch-free Updates
 // ============================================================================
 
-static inline size_t csyncmer_compute_fused_rescan_branchless(
+static inline size_t csyncmer_rescan_32_count(
     const char* sequence,
     size_t length,
     size_t K,
@@ -104,7 +104,7 @@ static inline size_t csyncmer_compute_fused_rescan_branchless(
     uint32_t f_rot[4];
     csyncmer_init_ascii_hash_table(F_ASCII);
     csyncmer_init_ascii_to_idx(IDX_ASCII);
-    csyncmer_make_f_rot(S, f_rot);
+    csyncmer_make_f_rot_32(S, f_rot);
 
     size_t window_size = K - S + 1;
     size_t num_smers = length - S + 1;
@@ -126,14 +126,14 @@ static inline size_t csyncmer_compute_fused_rescan_branchless(
     // First hash - compute directly
     uint32_t hash = 0;
     for (size_t j = 0; j < S; ++j) {
-        hash = csyncmer_rotl7(hash) ^ F_ASCII[seq[j]];
+        hash = csyncmer_rotl7_32(hash) ^ F_ASCII[seq[j]];
     }
     uint32_t fw = hash ^ f_rot[IDX_ASCII[seq[0]]];  // State uses first base of s-mer
     hash_buffer[0] = hash;
 
     // Fill initial window
     for (size_t i = 1; i < window_size; ++i) {
-        hash = csyncmer_rotl7(fw) ^ F_ASCII[seq[i + S - 1]];
+        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
         fw = hash ^ f_rot[IDX_ASCII[seq[i]]];  // Use new first base
         hash_buffer[i & buf_mask] = hash;
     }
@@ -158,7 +158,7 @@ static inline size_t csyncmer_compute_fused_rescan_branchless(
         size_t i = kmer_idx + window_size - 1;
 
         // Compute new hash
-        hash = csyncmer_rotl7(fw) ^ F_ASCII[seq[i + S - 1]];
+        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
         fw = hash ^ f_rot[IDX_ASCII[seq[i]]];  // Use new first base
         hash_buffer[i & buf_mask] = hash;
 
@@ -193,7 +193,7 @@ static inline size_t csyncmer_compute_fused_rescan_branchless(
 }
 
 // RESCAN variant that outputs positions (used as TWOSTACK fallback)
-static inline size_t csyncmer_compute_fused_rescan_branchless_positions(
+static inline size_t csyncmer_rescan_32_positions(
     const char* sequence,
     size_t length,
     size_t K,
@@ -210,7 +210,7 @@ static inline size_t csyncmer_compute_fused_rescan_branchless_positions(
     uint32_t f_rot[4];
     csyncmer_init_ascii_hash_table(F_ASCII);
     csyncmer_init_ascii_to_idx(IDX_ASCII);
-    csyncmer_make_f_rot(S, f_rot);
+    csyncmer_make_f_rot_32(S, f_rot);
 
     size_t window_size = K - S + 1;
     size_t num_smers = length - S + 1;
@@ -230,14 +230,14 @@ static inline size_t csyncmer_compute_fused_rescan_branchless_positions(
     // First hash
     uint32_t hash = 0;
     for (size_t j = 0; j < S; ++j) {
-        hash = csyncmer_rotl7(hash) ^ F_ASCII[seq[j]];
+        hash = csyncmer_rotl7_32(hash) ^ F_ASCII[seq[j]];
     }
     uint32_t fw = hash ^ f_rot[IDX_ASCII[seq[0]]];
     hash_buffer[0] = hash;
 
     // Fill initial window
     for (size_t i = 1; i < window_size; ++i) {
-        hash = csyncmer_rotl7(fw) ^ F_ASCII[seq[i + S - 1]];
+        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
         fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
         hash_buffer[i & buf_mask] = hash;
     }
@@ -265,7 +265,7 @@ static inline size_t csyncmer_compute_fused_rescan_branchless_positions(
     for (size_t kmer_idx = 1; kmer_idx < num_smers - window_size + 1; ++kmer_idx) {
         size_t i = kmer_idx + window_size - 1;
 
-        hash = csyncmer_rotl7(fw) ^ F_ASCII[seq[i + S - 1]];
+        hash = csyncmer_rotl7_32(fw) ^ F_ASCII[seq[i + S - 1]];
         fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
         hash_buffer[i & buf_mask] = hash;
 
@@ -737,11 +737,11 @@ static inline CsyncmerIteratorCanonical64* csyncmer_iterator_create_canonical_64
 }
 
 // Get next syncmer position and strand. Returns 1 if valid, 0 when exhausted.
-// position: output for syncmer position in sequence
+// pos: output for syncmer position in sequence
 // strand: output for which strand had minimal s-mer (0=forward, 1=RC)
 static inline int csyncmer_iterator_next_canonical_64(
     CsyncmerIteratorCanonical64* iter,
-    size_t* position,
+    size_t* pos,
     int* strand
 ) {
     if (!iter) return 0;
@@ -771,7 +771,7 @@ static inline int csyncmer_iterator_next_canonical_64(
     if (kmer_idx == 0) {
         size_t min_offset = min_pos;
         if (min_offset == 0 || min_offset == window_size - 1) {
-            *position = 0;
+            *pos = 0;
             *strand = strand_buffer[min_pos & buf_mask];
             iter->kmer_idx = 1;
             return 1;
@@ -842,7 +842,7 @@ static inline int csyncmer_iterator_next_canonical_64(
             iter->min_hash = min_hash;
             iter->min_pos = min_pos;
             iter->kmer_idx = kmer_idx;
-            *position = current_kmer;
+            *pos = current_kmer;
             *strand = strand_buffer[min_pos & buf_mask];
             return 1;
         }
@@ -1119,9 +1119,9 @@ static inline size_t csyncmer_append_filtered(
 // - Uses 16-bit hash packing, causing ~0.00004% discrepancy vs reference when
 //   two s-mer hashes have identical upper 16 bits.
 // - Falls back to scalar RESCAN when window_size > 64 (i.e., K - S + 1 > 64).
-// For exact results, use csyncmer_compute_fused_rescan_branchless() or the 64-bit
+// For exact results, use csyncmer_rescan_32_count() or the 64-bit
 // iterator API (csyncmer_iterator_*_64).
-static inline size_t csyncmer_compute_twostack_simd_32(
+static inline size_t csyncmer_twostack_simd_32_positions(
     const char* sequence,
     size_t length,
     size_t K,
@@ -1139,7 +1139,7 @@ static inline size_t csyncmer_compute_twostack_simd_32(
 
     // Fall back to scalar for small inputs or large windows
     if (num_kmers < 64 || window_size > 64) {
-        return csyncmer_compute_fused_rescan_branchless_positions(
+        return csyncmer_rescan_32_positions(
             sequence, length, K, S, out_positions, max_positions);
     }
 
@@ -1179,6 +1179,7 @@ static inline size_t csyncmer_compute_twostack_simd_32(
             free(lane_bufs[i]);
             lane_bufs[i] = (uint32_t*)aligned_alloc(32, max_per_lane * sizeof(uint32_t));
             if (!lane_bufs[i]) {
+                lane_buf_caps[i] = 0;
                 free(packed);
                 return 0;
             }
@@ -1480,8 +1481,8 @@ static inline size_t csyncmer_compute_twostack_simd_32(
 }
 
 // Count-only version of TWOSTACK (no position collection, faster)
-// Same limitations as csyncmer_compute_twostack_simd_32().
-static inline size_t csyncmer_compute_twostack_simd_32_count(
+// Same limitations as csyncmer_twostack_simd_32_positions().
+static inline size_t csyncmer_twostack_simd_32_count(
     const char* sequence,
     size_t length,
     size_t K,
@@ -1497,7 +1498,7 @@ static inline size_t csyncmer_compute_twostack_simd_32_count(
 
     if (num_kmers < 64 || window_size > 64) {
         size_t count;
-        csyncmer_compute_fused_rescan_branchless(sequence, length, K, S, &count);
+        csyncmer_rescan_32_count(sequence, length, K, S, &count);
         return count;
     }
 
@@ -1672,7 +1673,7 @@ static inline size_t csyncmer_compute_twostack_simd_32_count(
 // ============================================================================
 
 // Scalar fallback for canonical RESCAN (small inputs or large windows)
-static inline size_t csyncmer_compute_canonical_rescan_32_count(
+static inline size_t csyncmer_canonical_rescan_32_count(
     const char* sequence,
     size_t length,
     size_t K,
@@ -1688,7 +1689,7 @@ static inline size_t csyncmer_compute_canonical_rescan_32_count(
     uint32_t f_rot[4];
     csyncmer_init_ascii_hash_table(F_ASCII);
     csyncmer_init_ascii_to_idx(IDX_ASCII);
-    csyncmer_make_f_rot(S, f_rot);
+    csyncmer_make_f_rot_32(S, f_rot);
 
     // RC rotation table (same rotation amount, different constants)
     uint32_t c_rot[4];
@@ -1719,8 +1720,8 @@ static inline size_t csyncmer_compute_canonical_rescan_32_count(
     uint32_t fw_hash = 0;
     uint32_t rc_hash = 0;
     for (size_t j = 0; j < S; ++j) {
-        fw_hash = csyncmer_rotl7(fw_hash) ^ F_ASCII[seq[j]];
-        rc_hash = csyncmer_rotl7(rc_hash) ^ RC32[IDX_ASCII[seq[S - 1 - j]]];
+        fw_hash = csyncmer_rotl7_32(fw_hash) ^ F_ASCII[seq[j]];
+        rc_hash = csyncmer_rotl7_32(rc_hash) ^ RC32[IDX_ASCII[seq[S - 1 - j]]];
     }
 
     uint32_t canon_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;
@@ -1738,7 +1739,7 @@ static inline size_t csyncmer_compute_canonical_rescan_32_count(
         uint8_t idx_new = IDX_ASCII[new_last];
 
         // Forward rolling
-        fw_hash = csyncmer_rotl7(fw) ^ F_ASCII[new_last];
+        fw_hash = csyncmer_rotl7_32(fw) ^ F_ASCII[new_last];
         fw = fw_hash ^ f_rot[IDX_ASCII[new_first]];  // State uses first base of new s-mer
 
         // RC rolling: rc = rotr7(rc) ^ rotr7(RC[old_first]) ^ c_rot[new_last]
@@ -1774,7 +1775,7 @@ static inline size_t csyncmer_compute_canonical_rescan_32_count(
         uint8_t idx_new = IDX_ASCII[new_last];
 
         // Forward rolling
-        fw_hash = csyncmer_rotl7(fw) ^ F_ASCII[new_last];
+        fw_hash = csyncmer_rotl7_32(fw) ^ F_ASCII[new_last];
         fw = fw_hash ^ f_rot[IDX_ASCII[new_first]];  // State uses first base of new s-mer
 
         // RC rolling
@@ -1812,10 +1813,10 @@ static inline size_t csyncmer_compute_canonical_rescan_32_count(
     return syncmer_count;
 }
 
-// Canonical TWOSTACK with position and strand output
+// Canonical TWOSTACK with position and strand output (dual-hash reference implementation)
 // out_positions: syncmer positions in sequence
 // out_strands: 0=forward had min s-mer, 1=RC had min s-mer
-static inline size_t csyncmer_compute_twostack_simd_32_canonical(
+static inline size_t csyncmer_twostack_simd_32_canonical_positions(
     const char* sequence,
     size_t length,
     size_t K,
@@ -1886,6 +1887,12 @@ static inline size_t csyncmer_compute_twostack_simd_32_canonical(
             lane_bufs[i] = (uint32_t*)aligned_alloc(32, max_per_lane * sizeof(uint32_t));
             strand_bufs[i] = (uint8_t*)aligned_alloc(32, max_per_lane);
             if (!lane_bufs[i] || !strand_bufs[i]) {
+                // Clean up partial allocation
+                free(lane_bufs[i]);
+                free(strand_bufs[i]);
+                lane_bufs[i] = NULL;
+                strand_bufs[i] = NULL;
+                lane_buf_caps[i] = 0;
                 free(packed);
                 return 0;
             }
@@ -2235,8 +2242,9 @@ static inline size_t csyncmer_compute_twostack_simd_32_canonical(
     return total;
 }
 
-// Count-only canonical TWOSTACK (no position/strand collection, faster)
-static inline size_t csyncmer_compute_twostack_simd_32_canonical_count(
+// Count-only canonical TWOSTACK using dual-hash (computes both fw and rc every iteration)
+// This is the reference implementation for verification
+static inline size_t csyncmer_twostack_simd_32_canonical_count(
     const char* sequence,
     size_t length,
     size_t K,
@@ -2252,7 +2260,7 @@ static inline size_t csyncmer_compute_twostack_simd_32_canonical_count(
 
     // Fall back to scalar for small inputs or large windows
     if (num_kmers < 64 || window_size > 64) {
-        return csyncmer_compute_canonical_rescan_32_count(sequence, length, K, S);
+        return csyncmer_canonical_rescan_32_count(sequence, length, K, S);
     }
 
     // Pack sequence to 2-bit representation
@@ -2460,6 +2468,21 @@ static inline size_t csyncmer_compute_twostack_simd_32_canonical_count(
     free(packed);
     return syncmer_count;
 }
+
+// ============================================================================
+// Note on TG-count optimization (from simd-minimizers)
+// ============================================================================
+//
+// simd-minimizers uses TG-count for strand SELECTION in minimizers:
+// - "Canonical" in minimizers means: pick ONE strand consistently based on TG-count
+// - TG-count > 0 means more TG bases, so pick RC strand (which has more AC)
+//
+// For canonical SYNCMERS, we use a different definition:
+// - "Canonical" means: use min(forward_hash, rc_hash) for each s-mer
+// - We need the ACTUAL minimum hash value to find the minimum s-mer position
+// - TG-count can't skip hash computation because hash values are position-dependent
+//
+// The TG-count trick doesn't apply to canonical syncmer hash computation.
 
 #endif  // __AVX2__
 

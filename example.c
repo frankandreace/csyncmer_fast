@@ -17,13 +17,13 @@ int main() {
     printf("K=%zu, S=%zu\n\n", K, S);
 
     // 1. TWOSTACK count only (fastest, ~550 MB/s, requires AVX2)
-    size_t count1 = csyncmer_compute_twostack_simd_32_count(seq, len, K, S);
+    size_t count1 = csyncmer_twostack_simd_32_count(seq, len, K, S);
     printf("TWOSTACK count:     %zu syncmers (AVX2, ~99.99996%% accurate)\n", count1);
 
     // 2. TWOSTACK with positions
     size_t max_positions = len - K + 1;
     uint32_t* positions = (uint32_t*)malloc(max_positions * sizeof(uint32_t));
-    size_t count2 = csyncmer_compute_twostack_simd_32(seq, len, K, S, positions, max_positions);
+    size_t count2 = csyncmer_twostack_simd_32_positions(seq, len, K, S, positions, max_positions);
     printf("TWOSTACK positions: %zu syncmers\n", count2);
     if (count2 > 0) {
         printf("  First 3 positions: %u, %u, %u\n",

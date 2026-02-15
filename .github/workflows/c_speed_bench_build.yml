@@ -33,4 +33,4 @@ jobs:
       run: cd misc/tests && make
 
     - name: Run unit tests
-      run: cd misc/tests && ./benchmark test
+      run: cd misc/tests && ./test

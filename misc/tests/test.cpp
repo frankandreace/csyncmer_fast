@@ -619,9 +619,12 @@ void print_usage(const char *prog_name) {
 
 int main(int argc, char *argv[]) {
 
+    // Run unit tests first (no arguments needed)
+    run_unit_tests();
+
     if (argc < 4) {
-        print_usage(argv[0]);
-        return 1;
+        printf("Unit tests passed. Skipping FASTA correctness tests (no file provided).\n");
+        return 0;
     }
 
     char *fasta_file = argv[1];
@@ -632,9 +635,6 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: S (%d) must be less than K (%d)\n", S, K);
         return 1;
     }
-
-    // Run unit tests first
-    run_unit_tests();
 
     // Read sequence from FASTA file
     FILE *seqFile = fopen(fasta_file, "r");

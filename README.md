@@ -1,6 +1,10 @@
 # csyncmer_fast
 
-Header-only pure C library for fast closed syncmer detection using forward-strand ntHash and AVX2 SIMD.
+[![Build Docker Image for build and test](https://github.com/frankandreace/csyncmer_fast/actions/workflows/build-docker.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/build-docker.yml)
+[![C speed benchmark build](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml)
+[![python package compilation](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml)
+
+Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses forward-strand ntHash rolling hashes and AVX2 SIMD to process sequences at up to ~600 MB/s.
 
 ### Quick Start
 

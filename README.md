@@ -92,14 +92,14 @@ A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains i
 
 **ntHash Rolling Hash**: Both 32-bit and 64-bit variants (forward-strand only, not canonical). Uses direct ASCII lookup tables to skip 2-bit encoding overhead.
 
-**Hash size: 32-bit vs 64-bit**: Syncmer detection hashes s-mers and finds the minimum within a window of W = K - S + 1 elements. For this *selection* step, 32-bit is sufficient — collision probability per window is ~W^2/2^32 (negligible for typical W < 100). 64-bit hashes matter when using s-mer hashes as *identifiers* downstream (e.g. as a hash table key, for MinHash sketching, or k-mer indexing), where the birthday bound across billions of distinct sequences requires more bits.
+**Hash size: 32-bit vs 64-bit**: Syncmer detection hashes s-mers and finds the minimum within a window of W = K - S + 1 elements. For this *selection* step, 32-bit is sufficient — collision probability per window is ~W^2/2^32 (negligible for typical W < 100). 64-bit hashes matter when using s-mer hashes as *identifiers* downstream (e.g. as a hash table key, for MinHash sketching, or k-mer indexing).
 | Use case | 32-bit | 64-bit |
 |----------|--------|--------|
 | Syncmer selection (which s-mers?) | sufficient | overkill |
-| S-mer identity (e.g. hash table key) | too many collisions at genome scale | sufficient |
+| S-mer identity (e.g. hash table key) | too many collisions | sufficient |
 | MinHash / sketching | unusable | standard |
 
-**Canonical vs Forward-only**: Canonical implementations use `min(forward_hash, rc_hash)` for strand-independent results. Use canonical when you need consistent syncmer positions regardless of which DNA strand is sequenced. Forward-only is faster when strand doesn't matter or you're processing both strands separately.
+**Canonical vs Forward-only**: Canonical implementations use `min(forward_hash, rc_hash)` for strand-independent results. Use canonical when you need consistent syncmer positions regardless of which DNA strand is sequenced.
 
 ### Project Structure
 

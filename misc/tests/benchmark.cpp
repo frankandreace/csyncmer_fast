@@ -217,6 +217,7 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
                          "SYNCMER_NTH32_DEQUE_2BIT\t"
                          "SYNCMER_NTH32_DEQUE_FUSED\t"
                          "SYNCMER_NTH32_RESCAN_FUSED\t"
+                         "SYNCMER_NTH32_TWOSTACK_FUSED\t"
                          "SYNCMER_NTH32_RESCAN_SIMD\t"
                          "SYNCMER_NTH32_VANHERK\t"
                          "SYNCMER_NTH64_ITER_POS\t"
@@ -368,6 +369,13 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
     csyncmer_nthash32_fused_rescan(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
     end_time = clock();
     print_benchmark("NTH32_FUSED_RESCAN", start_time, end_time, fasta_filename, filePtr);
+    if (filePtr != NULL) { fprintf(filePtr, "\t"); }
+
+    printf("[[SYNCMERS nth32 fused-twostack]]\n");
+    start_time = clock();
+    csyncmer_nthash32_fused_twostack(sequence_input, sequence_input_length, K, S, &num_nthash32_syncmer);
+    end_time = clock();
+    print_benchmark("NTH32_FUSED_TWOSTACK", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
 #if defined(__AVX2__)
@@ -546,6 +554,22 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
     }
 
     if (run_32) {
+        // Scalar fused implementations (no AVX2 needed)
+        {
+            size_t num;
+            clock_t start = clock();
+            csyncmer_nthash32_fused_rescan(sequence, length, K, S, &num);
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH32_FUSED_RESCAN", num, file_size_mb / elapsed);
+        }
+        {
+            size_t num;
+            clock_t start = clock();
+            csyncmer_nthash32_fused_twostack(sequence, length, K, S, &num);
+            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+            printf("%-25s %10zu %12.2f\n", "NTH32_FUSED_TWOSTACK", num, file_size_mb / elapsed);
+        }
+
 #if defined(__AVX2__)
         // TWOSTACK count-only (no position collection)
         {

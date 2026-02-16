@@ -25,7 +25,10 @@ make clean && make
 - Two-stack sliding minimum with O(1) amortized operations
 - Splits sequence into 8 chunks processed in parallel with AVX2
 - Packs hash (upper 16 bits) + position (lower 16 bits) for SIMD comparison
-- Falls back to RESCAN for small inputs or window_size > 64
+- Falls back to RESCAN for small inputs (num_kmers < 64) or window_size > 64.
+  Note: the fallback uses full 32-bit hash resolution, unlike the SIMD path's
+  16-bit packing — inconsequential for small inputs, theoretically matters for
+  large windows on long sequences.
 - Canonical variant computes both forward and RC hashes in parallel
 
 ### RESCAN (Scalar Iterator)
@@ -98,14 +101,40 @@ For canonical syncmers, this approach doesn't apply because:
 
 **Key insight**: simd-minimizers' "canonical" is a boolean (which strand to report), while our "canonical" is a hash value (minimum of two hashes).
 
+## Code Generation Architecture
+
+csyncmer_fast.h uses two parameterized macros to generate all function variants:
+
+- `CSYNCMER_DEFINE_RESCAN_32(FUNC_NAME, CANONICAL)` — generates scalar RESCAN.
+  Count vs positions handled via runtime `if(out_positions)` — compiler eliminates
+  dead branch when inlined with NULL.
+- `CSYNCMER_DEFINE_TWOSTACK_SIMD_32(FUNC_NAME, CANONICAL, COLLECT_POSITIONS)` —
+  generates SIMD TWOSTACK. `COLLECT_POSITIONS` must be compile-time because of
+  static `CSYNCMER_THREAD_LOCAL` lane buffers (use `##FUNC_NAME` token pasting
+  for unique TLS names per expansion).
+
+All public API functions are thin inline wrappers calling the macro-generated internals.
+
+## CI / Docker
+
+- `misc/python/Dockerfile` builds the Docker image used by `c_speed_bench_build.yml`
+- The Docker image MUST include ntHash (built from source) because misc/tests/
+  {benchmark,test}.cpp depend on `nthash/nthash.hpp` and `-lnthash` via
+  `legacy_infrastructure.hpp`. Removing ntHash from the Dockerfile breaks CI.
+- Docker image rebuild triggers on Dockerfile changes; bench CI triggers on
+  changes to `csyncmer_fast.h`, `misc/tests/**`, `misc/syng/**`.
+  If both trigger on the same push, the bench CI may use the stale image —
+  re-run manually after the Docker build completes.
+
 ## Project Structure
 
 ```
 csyncmer_fast.h          # Main header (pure C, header-only)
+example.c                # Standalone usage example (compile with gcc -mavx2)
 misc/
   tests/                 # Tests and benchmarks (test.cpp, benchmark.cpp)
   code/                  # Reference implementations (32/64/128-bit variants)
     simd/                # C++ SIMD utilities (used by reference implementations)
   syng/                  # External syng library (seqhash)
-  python/                # Python bindings
+  python/                # Python bindings + Dockerfile for CI
 ```

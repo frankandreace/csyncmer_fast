@@ -497,6 +497,128 @@ inline size_t csyncmer_nthash32_fused_rescan(
     return syncmer_count;
 }
 
+/// Fused hash + two-stack sliding minimum (block-based Van Herk/Gil-Werman)
+/// O(1) worst-case per element: ~3 comparisons (1 prefix + 1 window + 1 amortized suffix)
+/// Eliminates the variable-length rescan loop of fused_rescan.
+inline size_t csyncmer_nthash32_fused_twostack(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S,
+    size_t* num_syncmers
+) {
+    if (length < K) {
+        *num_syncmers = 0;
+        return 0;
+    }
+
+    static const auto F_ASCII = make_ascii_hash_table_local();
+    static const auto IDX_ASCII = make_ascii_to_idx_local();
+
+    auto f_rot = csyncmer_simd::hash::detail::make_f_rot(S);
+
+    size_t window_size = K - S + 1;
+    size_t num_smers = length - S + 1;
+
+    if (window_size > 64) {
+        return csyncmer_nthash32_fused_rescan(sequence, length, K, S, num_syncmers);
+    }
+
+    const uint8_t* seq = reinterpret_cast<const uint8_t*>(sequence);
+
+    // Block size = window_size. Pack (hash << 32) | position for combined comparison.
+    uint64_t ring[64];
+    uint64_t suffix_min[64];
+    uint64_t prefix_min = UINT64_MAX;
+
+    size_t syncmer_count = 0;
+
+    // Initialize first s-mer hash
+    uint32_t hash = 0;
+    for (size_t j = 0; j < S; ++j) {
+        hash = csyncmer_simd::hash::detail::rotl7(hash) ^ F_ASCII[seq[j]];
+    }
+    uint32_t fw = hash ^ f_rot[IDX_ASCII[seq[0]]];
+
+    // Fill initial block (s-mers 0 to window_size-1)
+    ring[0] = (static_cast<uint64_t>(hash) << 32) | 0u;
+    prefix_min = ring[0];
+
+    for (size_t i = 1; i < window_size; ++i) {
+        hash = csyncmer_simd::hash::detail::rotl7(fw) ^ F_ASCII[seq[i + S - 1]];
+        fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
+        uint64_t packed = (static_cast<uint64_t>(hash) << 32) | static_cast<uint32_t>(i);
+        ring[i] = packed;
+        if (packed < prefix_min) prefix_min = packed;
+    }
+
+    // Check first window (kmer 0): entirely in first block
+    {
+        size_t min_pos = static_cast<size_t>(prefix_min & 0xFFFFFFFF);
+        if (min_pos == 0 || min_pos == window_size - 1) {
+            syncmer_count++;
+        }
+    }
+
+    // Block-unrolled main loop: process W elements per outer iteration.
+    // Eliminates per-element branches for block boundary and start_offset wrap.
+    for (size_t block_start = window_size; block_start < num_smers; block_start += window_size) {
+        // Suffix-min scan (once per block, amortized O(1) per element)
+        suffix_min[window_size - 1] = ring[window_size - 1];
+        for (size_t j = window_size - 1; j > 0; --j) {
+            suffix_min[j - 1] = std::min(ring[j - 1], suffix_min[j]);
+        }
+        prefix_min = UINT64_MAX;
+
+        size_t block_end = std::min(block_start + window_size, num_smers);
+        size_t block_len = block_end - block_start;
+        size_t inner_count = std::min(block_len, window_size - 1);
+
+        // Inner loop: window spans previous block (suffix) + current block (prefix)
+        // No per-element branch for block boundary or start_offset wrap.
+        for (size_t j = 0; j < inner_count; ++j) {
+            size_t i = block_start + j;
+
+            hash = csyncmer_simd::hash::detail::rotl7(fw) ^ F_ASCII[seq[i + S - 1]];
+            fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
+
+            uint64_t packed = (static_cast<uint64_t>(hash) << 32) | static_cast<uint32_t>(i);
+            ring[j] = packed;
+            prefix_min = std::min(prefix_min, packed);
+
+            uint64_t window_min = std::min(suffix_min[j + 1], prefix_min);
+
+            size_t kmer_idx = i - window_size + 1;
+            size_t min_pos = static_cast<size_t>(window_min & 0xFFFFFFFF);
+            size_t min_offset = min_pos - kmer_idx;
+            syncmer_count += (min_offset == 0) | (min_offset == window_size - 1);
+        }
+
+        // Last element of full block: window entirely in current block (no suffix needed)
+        if (block_len == window_size) {
+            size_t i = block_start + window_size - 1;
+
+            hash = csyncmer_simd::hash::detail::rotl7(fw) ^ F_ASCII[seq[i + S - 1]];
+            fw = hash ^ f_rot[IDX_ASCII[seq[i]]];
+
+            uint64_t packed = (static_cast<uint64_t>(hash) << 32) | static_cast<uint32_t>(i);
+            ring[window_size - 1] = packed;
+            prefix_min = std::min(prefix_min, packed);
+
+            uint64_t window_min = prefix_min;
+
+            size_t kmer_idx = i - window_size + 1;
+            size_t min_pos = static_cast<size_t>(window_min & 0xFFFFFFFF);
+            size_t min_offset = min_pos - kmer_idx;
+            syncmer_count += (min_offset == 0) | (min_offset == window_size - 1);
+        }
+    }
+
+    *num_syncmers = syncmer_count;
+    printf("[NTHASH32_FUSED_TWOSTACK]:: COMPUTED %lu CLOSED SYNCMERS\n", syncmer_count);
+    return syncmer_count;
+}
+
 /// Van Herk/Gil-Werman O(1) block algorithm
 inline size_t csyncmer_nthash32_vanherk(
     const char* sequence,

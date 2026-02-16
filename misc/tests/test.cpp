@@ -221,6 +221,12 @@ size_t count_nthash32_syncmers_fused_rescan(const char *sequence_input, size_t K
     return num_syncmers;
 }
 
+size_t count_nthash32_syncmers_fused_twostack(const char *sequence_input, size_t K, size_t S) {
+    size_t num_syncmers = 0;
+    csyncmer_nthash32_fused_twostack(sequence_input, strlen(sequence_input), K, S, &num_syncmers);
+    return num_syncmers;
+}
+
 #if defined(__AVX2__)
 size_t count_nthash32_syncmers_fused_simd(const char *sequence_input, size_t K, size_t S) {
     size_t num_syncmers = 0;
@@ -414,6 +420,7 @@ int run_correctness_check(char *sequence_input, int K, int S){
     size_t num_nthash32_direct_rescan = count_nthash32_syncmers_direct(sequence_input, K, S);
     size_t num_nthash32_fused_deque = count_nthash32_syncmers_fused(sequence_input, K, S);
     size_t num_nthash32_fused_rescan = count_nthash32_syncmers_fused_rescan(sequence_input, K, S);
+    size_t num_nthash32_fused_twostack = count_nthash32_syncmers_fused_twostack(sequence_input, K, S);
 
     free(encoded_seq);
 
@@ -433,6 +440,10 @@ int run_correctness_check(char *sequence_input, int K, int S){
     }
     if (num_nthash32_2bit_rescan != num_nthash32_fused_rescan) {
         printf("[NTHASH32 ERROR] RESCAN: %lu ; FUSED_RESCAN: %lu\n", num_nthash32_2bit_rescan, num_nthash32_fused_rescan);
+        nthash32_ok = false;
+    }
+    if (num_nthash32_2bit_rescan != num_nthash32_fused_twostack) {
+        printf("[NTHASH32 ERROR] RESCAN: %lu ; FUSED_TWOSTACK: %lu\n", num_nthash32_2bit_rescan, num_nthash32_fused_twostack);
         nthash32_ok = false;
     }
     if (num_nthash32_2bit_rescan != num_nthash32_naive) {
@@ -585,10 +596,10 @@ int run_correctness_check(char *sequence_input, int K, int S){
 
     // Report results
 #if defined(__AVX2__)
-    int nthash32_count = 11;  // naive, rescan, deque, direct, fused_deque, fused_rescan, simd_rescan, vanherk, twostack, simd_pos, simd_mw
+    int nthash32_count = 12;  // naive, rescan, deque, direct, fused_deque, fused_rescan, fused_twostack, simd_rescan, vanherk, twostack, simd_pos, simd_mw
     int nthash64_count = 5;   // naive, iterator, rescan_count, simd_mw, canonical
 #else
-    int nthash32_count = 7;   // naive, rescan, deque, direct, fused_deque, fused_rescan, vanherk
+    int nthash32_count = 8;   // naive, rescan, deque, direct, fused_deque, fused_rescan, fused_twostack, vanherk
     int nthash64_count = 4;   // naive, iterator, rescan_count, canonical
 #endif
 

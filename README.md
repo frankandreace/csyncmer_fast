@@ -4,7 +4,7 @@
 [![C speed benchmark build](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml)
 [![python package compilation](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml)
 
-Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses ntHash rolling hashes and AVX2 SIMD to process sequences at up to ~900 MB/s.
+Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses ntHash rolling hashes with two algorithms: **TWOSTACK** (AVX2 SIMD batch processing, up to ~1400 MB/s) and **RESCAN** (portable scalar iterator, up to ~420 MB/s).
 
 ### Quick Start
 
@@ -18,16 +18,16 @@ size_t K = 31, S = 15;
 // TWOSTACK: fastest (~1400 MB/s), AVX2, ~99.99996% accurate
 size_t count = csyncmer_twostack_simd_32_count(seq, len, K, S);
 
-// Canonical TWOSTACK: strand-independent (~1260 MB/s), AVX2
+// Canonical TWOSTACK: strand-independent (~1290 MB/s), AVX2
 size_t canon_count = csyncmer_twostack_simd_32_canonical_count(seq, len, K, S);
 
-// Canonical with positions and strands (~500 MB/s), AVX2
+// Canonical with positions and strands (~470 MB/s), AVX2
 uint32_t positions[10000];
 uint8_t strands[10000];  // 0=forward, 1=RC had minimal s-mer
 size_t n = csyncmer_twostack_simd_32_canonical_positions(
     seq, len, K, S, positions, strands, 10000);
 
-// Iterator: scalar, portable, exact results (~165 MB/s)
+// Iterator: scalar, portable, exact results (~400 MB/s)
 CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
 size_t pos;
 while (csyncmer_iterator_next_64(iter, &pos)) {
@@ -35,7 +35,7 @@ while (csyncmer_iterator_next_64(iter, &pos)) {
 }
 csyncmer_iterator_destroy_64(iter);
 
-// Canonical iterator: strand-independent (~130 MB/s), scalar
+// Canonical iterator: strand-independent (~285 MB/s), scalar
 CsyncmerIteratorCanonical64* citer = csyncmer_iterator_create_canonical_64(seq, len, K, S);
 int strand;
 while (csyncmer_iterator_next_canonical_64(citer, &pos, &strand)) {
@@ -57,16 +57,16 @@ gcc -std=c11 -o example -march=native example.c
 | Function | Output | Speed | Notes |
 |----------|--------|-------|-------|
 | `csyncmer_twostack_simd_32_count` | Count | ~1400 MB/s | AVX2, fastest |
-| `csyncmer_twostack_simd_32_positions` | Positions | ~790-910 MB/s | AVX2 |
-| `csyncmer_iterator_*_64` | Positions | ~145-165 MB/s | Scalar, portable, exact |
+| `csyncmer_twostack_simd_32_positions` | Positions | ~780-910 MB/s | AVX2 |
+| `csyncmer_iterator_*_64` | Positions | ~370-420 MB/s | Scalar, portable, exact |
 
 **Canonical (strand-independent):**
 
 | Function | Output | Speed | Notes |
 |----------|--------|-------|-------|
-| `csyncmer_twostack_simd_32_canonical_count` | Count | ~1260 MB/s | AVX2 |
-| `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~460-500 MB/s | AVX2 |
-| `csyncmer_iterator_*_canonical_64` | Positions + strands | ~100-130 MB/s | Scalar, portable, exact |
+| `csyncmer_twostack_simd_32_canonical_count` | Count | ~1290 MB/s | AVX2 |
+| `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~450-480 MB/s | AVX2 |
+| `csyncmer_iterator_*_canonical_64` | Positions + strands | ~278-293 MB/s | Scalar, portable, exact |
 
 All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
 Speeds measured on chr19 (59 MB), best-of-5, Zen 3 CPU.
@@ -103,9 +103,11 @@ A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains i
 
 ### Key Implementation Details
 
-**TWOSTACK Algorithm** (AVX2): Splits sequence into 8 chunks processed in parallel. Uses two-stack (prefix-suffix) sliding minimum for O(1) amortized operations. Packs hash (upper 16 bits) + position (lower 16 bits) for SIMD comparison. Uses 16-bit hash approximation (~4 errors per 10M syncmers).
+The library provides two algorithms for syncmer extraction:
 
-**Iterator** (Scalar): Uses RESCAN algorithm internally - O(1) amortized, only rescans window when minimum falls out (~6% of iterations). Branch-free minimum update. Works on any CPU without SIMD.
+**TWOSTACK** (AVX2 SIMD, batch): Splits the sequence into 8 chunks processed in parallel. Uses the two-stack (prefix-suffix) sliding minimum algorithm ([Groot Koerkamp & Martayan, SEA 2025](https://curiouscoding.nl/posts/fast-minimizers/); independently implemented in [simd-minimizers](https://github.com/rust-seq/simd-minimizers)) for O(1) amortized operations per element. Packs hash (upper 16 bits) + position (lower 16 bits) into 32-bit values for SIMD comparison. Requires the full sequence upfront.
+
+**RESCAN** (scalar, streaming iterator): O(1) amortized — maintains a circular buffer and only rescans the window when the current minimum falls out (~6% of iterations). Branch-free minimum update using conditional moves. Uses full 64-bit hashes (no approximation). Works on any CPU without SIMD and processes one syncmer at a time, making it suitable for streaming pipelines.
 
 **ntHash Rolling Hash**: Both 32-bit and 64-bit variants (forward-strand only, not canonical). Uses direct ASCII lookup tables to skip 2-bit encoding overhead.
 
@@ -151,8 +153,8 @@ docker-compose run python-build
 ### References
 
 - [Edgar RC (2021) "Syncmers are more sensitive than minimizers for selecting conserved k-mers in biological sequences." PeerJ 9:e10805](https://peerj.com/articles/10805/) - Original syncmer definition
-- [simd-minimizers](https://github.com/rust-seq/simd-minimizers) - TWOSTACK algorithm inspiration
-- [Curiouscoding: Fast Minimizers](https://curiouscoding.nl/posts/fast-minimizers/)
+- [Groot Koerkamp & Martayan (SEA 2025) "SimdMinimizers: Computing random minimizers, fast."](https://github.com/rust-seq/simd-minimizers) - TWOSTACK sliding minimum algorithm
+- [Curiouscoding: Fast Minimizers](https://curiouscoding.nl/posts/fast-minimizers/) - Blog post describing the TWOSTACK approach
 - [Sliding Window Minimum Algorithm](https://github.com/keegancsmith/Sliding-Window-Minimum)
 - [SYNG (Durbin)](https://github.com/richarddurbin/syng/)
 - [Strobealign](https://github.com/ksahlin/strobealign)

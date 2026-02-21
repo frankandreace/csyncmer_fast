@@ -4,7 +4,7 @@
 [![C speed benchmark build](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/c_speed_bench_build.yml)
 [![python package compilation](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml/badge.svg)](https://github.com/frankandreace/csyncmer_fast/actions/workflows/python-build.yml)
 
-Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses forward-strand ntHash rolling hashes and AVX2 SIMD to process sequences at up to ~600 MB/s.
+Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses ntHash rolling hashes and AVX2 SIMD to process sequences at up to ~900 MB/s.
 
 ### Quick Start
 
@@ -15,13 +15,13 @@ const char* seq = "ACGTACGTACGT...";
 size_t len = strlen(seq);
 size_t K = 31, S = 15;
 
-// TWOSTACK: fastest (~600 MB/s), AVX2, ~99.99996% accurate
+// TWOSTACK: fastest (~1400 MB/s), AVX2, ~99.99996% accurate
 size_t count = csyncmer_twostack_simd_32_count(seq, len, K, S);
 
-// Canonical TWOSTACK: strand-independent (~550 MB/s), AVX2
+// Canonical TWOSTACK: strand-independent (~1260 MB/s), AVX2
 size_t canon_count = csyncmer_twostack_simd_32_canonical_count(seq, len, K, S);
 
-// Canonical with positions and strands (~180 MB/s), AVX2
+// Canonical with positions and strands (~500 MB/s), AVX2
 uint32_t positions[10000];
 uint8_t strands[10000];  // 0=forward, 1=RC had minimal s-mer
 size_t n = csyncmer_twostack_simd_32_canonical_positions(
@@ -56,19 +56,36 @@ gcc -std=c11 -o example -march=native example.c
 
 | Function | Output | Speed | Notes |
 |----------|--------|-------|-------|
-| `csyncmer_twostack_simd_32_count` | Count | ~550-635 MB/s | AVX2, fastest |
-| `csyncmer_twostack_simd_32_positions` | Positions | ~250-290 MB/s | AVX2 |
+| `csyncmer_twostack_simd_32_count` | Count | ~1400 MB/s | AVX2, fastest |
+| `csyncmer_twostack_simd_32_positions` | Positions | ~790-910 MB/s | AVX2 |
 | `csyncmer_iterator_*_64` | Positions | ~145-165 MB/s | Scalar, portable, exact |
 
 **Canonical (strand-independent):**
 
 | Function | Output | Speed | Notes |
 |----------|--------|-------|-------|
-| `csyncmer_twostack_simd_32_canonical_count` | Count | ~500-570 MB/s | AVX2 |
-| `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~170-200 MB/s | AVX2 |
+| `csyncmer_twostack_simd_32_canonical_count` | Count | ~1260 MB/s | AVX2 |
+| `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~460-500 MB/s | AVX2 |
 | `csyncmer_iterator_*_canonical_64` | Positions + strands | ~100-130 MB/s | Scalar, portable, exact |
 
 All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
+Speeds measured on chr19 (59 MB), best-of-5, Zen 3 CPU.
+
+**vs [simd-minimizers](https://github.com/rust-seq/simd-minimizers) (Rust SIMD, chr19):**
+
+Non-canonical syncmer counts match exactly between the two libraries.
+Canonical counts differ slightly (~0.2%) due to different canonical hash
+definitions: csyncmer_fast uses `min(fw, rc)`, simd-minimizers uses `fw XOR rc`.
+The canonical gap is largely due to strand tracking: `min(fw, rc)` requires
+propagating which strand produced the minimum through the sliding window
+algorithm, while `fw XOR rc` is inherently strand-symmetric and needs no tracking.
+
+| Variant | csyncmer_fast | simd-minimizers |
+|---------|---------------|-----------------|
+| Non-canonical positions (K=21) | **913 MB/s** | 637 MB/s |
+| Non-canonical positions (K=31) | **791 MB/s** | 711 MB/s |
+| Canonical positions (K=21) | 461 MB/s | **534 MB/s** |
+| Canonical positions (K=31) | 497 MB/s | **560 MB/s** |
 
 ### Benchmarking
 

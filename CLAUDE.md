@@ -72,34 +72,81 @@ When `chunk_ends[i] < chunk_starts[i]` (boundary chunks), compute `last_lane_lim
 
 - 16-bit hash approximation causes ~0.00004% error rate
 - Canonical SIMD is 4-5x faster than scalar canonical iterator
+- Non-canonical positions use batch+transpose with `CSYNCMER_UNIQSHUF` LUT
+  (SIMD shuffle compaction via `csyncmer_append_filtered`)
+- Canonical positions use per-iteration scatter (batch+transpose provides no
+  benefit because the RC hash computation dominates, not position collection)
 - Count-only variants are ~2x faster than position-collecting variants
 - Different hash sizes (32/64-bit) produce different syncmer counts due to tie-breaking
 
-## Benchmark Speeds
+## Benchmark Speeds (chr19, 59 MB, best-of-5)
 
-### Realistic TWOSTACK Speeds
+| Variant | K=21 S=11 | K=31 S=15 |
+|---|---|---|
+| Non-canonical count | ~1400 MB/s | ~1400 MB/s |
+| Non-canonical positions | ~910 MB/s | ~790 MB/s |
+| Canonical count | ~1260 MB/s | ~1260 MB/s |
+| Canonical positions | ~460 MB/s | ~500 MB/s |
 
-- **~550-600 MB/s** cold (first call, data not in CPU cache)
-- **~630-660 MB/s** warm (after repeated calls, data in L2/L3)
-- Binary size (.text) has negligible impact: a 7KB minimal binary and the 214KB full benchmark binary produce the same speeds when measured correctly
+### vs simd-minimizers Rust (same chr19 data)
+
+| Variant | csyncmer_fast | simd-minimizers Rust |
+|---|---|---|
+| Non-canonical K=21/S=11 | 913 MB/s | 637 MB/s (**+43%**) |
+| Non-canonical K=31/S=15 | 791 MB/s | 711 MB/s (**+11%**) |
+| Canonical K=21/S=11 | 461 MB/s | 534 MB/s (-14%) |
+| Canonical K=31/S=15 | 497 MB/s | 560 MB/s (-11%) |
+
+Non-canonical counts match exactly between the two projects. Canonical counts
+differ slightly because of different canonical hash semantics (see below).
+
+### Why Canonical Positions Are Slower Than simd-minimizers
+
+The ~13% gap is **fundamental to the `min(fw, rc)` canonical hash approach**,
+not a code quality issue. csyncmer_fast uses `min(forward_hash, rc_hash)` which
+requires strand tracking (cmpgt + movemask + bitwise ops propagated through the
+TWOSTACK prefix/suffix min — ~14 extra SIMD ops/iteration). simd-minimizers uses
+`forward_hash XOR rc_hash` (strand-symmetric), eliminating all strand tracking.
+
+Investigated optimizations (all reverted as not worth the trade-offs):
+- **Embed strand in packed value bit 16**: Eliminates explicit strand tracking but
+  reduces hash precision to 15 bits, causing count≠positions disagreement (~0.02%)
+  and canonical count regression (~6%). Canonical positions improved only ~3-5%.
+- **Batch+transpose for canonical positions**: Same approach as non-canonical.
+  Marginal improvement because the bottleneck is the RC hash computation in the
+  main loop, not the position collection method.
+
+The per-iteration cycle breakdown explains the bound:
+- Non-canonical count: ~26 cycles/iter → ~1400 MB/s
+- Canonical count: ~31 cycles/iter (+5 for RC hash) → ~1260 MB/s
+- Non-canonical positions: ~42 cycles/iter (+16 for batch+transpose) → ~910 MB/s
+- Canonical positions: ~77 cycles/iter (+31 for RC hash + strand tracking + scatter) → ~460 MB/s
 
 ### Benchmarking Pitfall: Dead Code Elimination
 
 When the return value of `csyncmer_twostack_simd_32_count` is discarded, GCC `-O3` creates a stripped `.isra` clone that eliminates the entire TWOSTACK algorithm (0 AVX2 instructions vs 153 in the real function). This produces bogus speeds of 1200-1500 MB/s. Always use `volatile` or otherwise consume the result when benchmarking.
 
-## TG-count Optimization (Investigated, Not Applicable)
+## Canonical Hash: min(fw,rc) vs XOR (simd-minimizers)
 
-The simd-minimizers library uses TG-count for strand selection:
-- Counts (TG - AC) bases in each window
-- If TG > AC, the RC strand is "preferred" for consistent minimizer reporting
-- This is for **strand preference**, not hash computation
+csyncmer_fast and simd-minimizers use fundamentally different canonical hash strategies:
 
-For canonical syncmers, this approach doesn't apply because:
-- We need `min(forward_hash, rc_hash)` as the actual hash value
-- ntHash is position-dependent, so TG-count can't predict which hash is smaller
-- We must compute both hashes to find the minimum s-mer position
+| | csyncmer_fast | simd-minimizers |
+|---|---|---|
+| **Canonical hash** | `min(fw_hash, rc_hash)` | `fw_hash XOR rc_hash` |
+| **Strand tracking** | Required (cmpgt + movemask + bitwise propagation through TWOSTACK) | Not needed (XOR is symmetric) |
+| **Sliding min** | Single minimum (leftmost) | Both leftmost AND rightmost simultaneously |
+| **Strand selection** | Implicit in min() | TG-count majority vote + blend |
+| **Position collection** | Non-canonical: batch+transpose; Canonical: per-iteration scatter | Batch+transpose for both |
 
-**Key insight**: simd-minimizers' "canonical" is a boolean (which strand to report), while our "canonical" is a hash value (minimum of two hashes).
+These produce different canonical syncmer sets (e.g., 13,537,894 vs 13,505,495
+for K=21/S=11 on chr19). Neither is "wrong" — they define canonicality differently.
+
+**Why TG-count can't help csyncmer_fast**: simd-minimizers uses TG-count to
+cheaply select a preferred strand (a boolean), then picks left or right minimum
+accordingly. This works because XOR hash is strand-symmetric — you don't need to
+know the strand to compute the hash. csyncmer_fast needs `min(forward_hash,
+rc_hash)` as the actual hash value. Since ntHash is position-dependent, TG-count
+can't predict which hash is smaller — both hashes must be computed and compared.
 
 ## Code Generation Architecture
 

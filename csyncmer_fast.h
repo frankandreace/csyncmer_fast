@@ -1026,8 +1026,7 @@ static inline void csyncmer_pack_seq_2bit(
 #endif
 }
 
-// 8x8 matrix transpose for batch output collection
-// Adapted from simd-minimizers
+// 8x8 matrix transpose for batch output collection (non-canonical positions)
 static inline void csyncmer_transpose_8x8(__m256i m[8], __m256i t[8]) {
     __m256 r0 = _mm256_unpacklo_ps(_mm256_castsi256_ps(m[0]), _mm256_castsi256_ps(m[1]));
     __m256 r1 = _mm256_unpackhi_ps(_mm256_castsi256_ps(m[0]), _mm256_castsi256_ps(m[1]));
@@ -1140,7 +1139,6 @@ static inline size_t csyncmer_append_filtered(
     _mm256_storeu_si256((__m256i*)(out + write_idx), packed);
     return write_idx + num;
 }
-
 
 // Optimized two-stack with SIMD hash computation (32-bit hash, 8 parallel lanes)
 // Macro-generated for forward/canonical and count/positions variants.
@@ -1322,9 +1320,9 @@ static inline size_t FUNC_NAME(                                                \
     __m256i pos_offset_vec = _mm256_setzero_si256();                           \
     const uint32_t max_pos_val = 0xFFFF;                                       \
                                                                                \
-    /* Batch buffer for transpose (positions only, but declare always) */      \
+                                                                               \
+    /* Batch buffer for non-canonical positions (transpose approach) */         \
     alignas(32) __m256i batch_pos[8];                                          \
-    alignas(32) uint8_t batch_strand[8];                                       \
     size_t batch_count = 0;                                                    \
     size_t batch_base_kmer = 0;                                                \
     alignas(32) uint32_t idx_arr[8] = {0, 1, 2, 3, 4, 5, 6, 7};              \
@@ -1337,18 +1335,15 @@ static inline size_t FUNC_NAME(                                                \
         gather_base[i] = (int32_t)(i * bytes_per_chunk);                       \
     __m256i gather_base_vec = _mm256_load_si256((const __m256i*)gather_base);   \
                                                                                \
-    /* Validity threshold */                                                   \
-    size_t last_lane_limit;                                                    \
-    if (CANONICAL) {                                                           \
-        last_lane_limit = chunk_len;                                           \
-        for (int i = 0; i < 8; i++) {                                          \
-            if (chunk_ends[i] > chunk_starts[i]) {                             \
-                size_t ll = chunk_ends[i] - chunk_starts[i];                   \
-                if (ll < last_lane_limit) last_lane_limit = ll;                \
-            } else { last_lane_limit = 0; }                                    \
-        }                                                                      \
-    } else {                                                                   \
-        last_lane_limit = chunk_ends[7] - chunk_starts[7];                     \
+    /* Validity threshold: min lane length across all lanes.                   \
+     * Must handle chunk_ends[i] <= chunk_starts[i] for short sequences        \
+     * where later lanes have no valid k-mers. */                              \
+    size_t last_lane_limit = chunk_len;                                        \
+    for (int i = 0; i < 8; i++) {                                              \
+        if (chunk_ends[i] > chunk_starts[i]) {                                 \
+            size_t ll = chunk_ends[i] - chunk_starts[i];                       \
+            if (ll < last_lane_limit) last_lane_limit = ll;                    \
+        } else { last_lane_limit = 0; }                                        \
     }                                                                          \
                                                                                \
     __m256i cur_data = _mm256_setzero_si256();                                 \
@@ -1528,57 +1523,47 @@ static inline size_t FUNC_NAME(                                                \
             _mm256_and_si256(min_elem, pos_mask), pos_offset_vec);             \
         size_t kmer_idx = iter - S + 1 - window_size + 1;                     \
                                                                                \
-        if (COLLECT_POSITIONS) {                                               \
+        if (COLLECT_POSITIONS && !CANONICAL) {                                  \
+            /* Non-canonical positions: batch + transpose approach.             \
+             * Keeps the syncmer check off the hot loop critical path. */       \
             if (batch_count % 8 == 0) batch_base_kmer = kmer_idx;             \
             batch_pos[batch_count % 8] = min_pos_vec;                          \
-            if (CANONICAL) batch_strand[batch_count % 8] = overall_strand;     \
             batch_count++;                                                     \
                                                                                \
             if (batch_count % 8 == 0) {                                        \
                 __m256i tp[8];                                                 \
                 csyncmer_transpose_8x8(batch_pos, tp);                         \
                 __m256i bb = _mm256_set1_epi32((int)batch_base_kmer);          \
-                __m256i fs = _mm256_add_epi32(bb, idx_offsets);                \
-                __m256i ls = _mm256_add_epi32(fs, w_minus_1_vec);              \
+                __m256i bfs = _mm256_add_epi32(bb, idx_offsets);               \
+                __m256i bls = _mm256_add_epi32(bfs, w_minus_1_vec);            \
                 for (int lane = 0; lane < 8; lane++) {                         \
-                    __m256i lo = _mm256_set1_epi32((int)chunk_starts[lane]);   \
-                    __m256i ap = _mm256_add_epi32(lo, fs);                     \
-                    __m256i mpl = tp[lane];                                    \
-                    __m256i isy = _mm256_or_si256(                             \
-                        _mm256_cmpeq_epi32(mpl, fs),                           \
-                        _mm256_cmpeq_epi32(mpl, ls));                          \
+                    __m256i lo = _mm256_set1_epi32(                            \
+                        (int)chunk_starts[lane]);                              \
+                    __m256i ap = _mm256_add_epi32(lo, bfs);                    \
+                    __m256i bisy = _mm256_or_si256(                            \
+                        _mm256_cmpeq_epi32(tp[lane], bfs),                     \
+                        _mm256_cmpeq_epi32(tp[lane], bls));                    \
                     if (batch_base_kmer + 7 >= last_lane_limit) {              \
                         __m256i lim = _mm256_set1_epi32(                       \
                             (int)(chunk_ends[lane] - chunk_starts[lane]));     \
-                        __m256i ki = _mm256_add_epi32(bb, idx_offsets);        \
-                        isy = _mm256_and_si256(isy,                            \
-                            _mm256_cmpgt_epi32(lim, ki));                      \
+                        bisy = _mm256_and_si256(bisy,                          \
+                            _mm256_cmpgt_epi32(lim, _mm256_add_epi32(         \
+                                bb, idx_offsets)));                            \
                     }                                                          \
-                    int km = _mm256_movemask_ps(_mm256_castsi256_ps(isy));     \
-                    if (km && lane_counts[lane] + 8 <= max_per_lane) {         \
-                        int skm = (~km) & 0xFF;                                \
-                        if (CANONICAL) {                                       \
-                            size_t oc_ = lane_counts[lane];                    \
-                            lane_counts[lane] = csyncmer_append_filtered(      \
-                                ap, skm,                                       \
-                                ts_pos_bufs_##FUNC_NAME[lane],                 \
-                                lane_counts[lane]);                            \
-                            for (int j = 0; j < 8; j++) {                     \
-                                if ((km >> j) & 1)                             \
-                                    ts_str_bufs_##FUNC_NAME[lane][oc_++] =    \
-                                        (batch_strand[j] >> lane) & 1;        \
-                            }                                                  \
-                        } else {                                               \
-                            lane_counts[lane] = csyncmer_append_filtered(      \
-                                ap, skm,                                       \
-                                ts_pos_bufs_##FUNC_NAME[lane],                 \
-                                lane_counts[lane]);                            \
-                        }                                                      \
+                    int bkm = _mm256_movemask_ps(                              \
+                        _mm256_castsi256_ps(bisy));                            \
+                    if (bkm && lane_counts[lane] + 8 <= max_per_lane) {        \
+                        int skm = (~bkm) & 0xFF;                               \
+                        lane_counts[lane] = csyncmer_append_filtered(          \
+                            ap, skm,                                           \
+                            ts_pos_bufs_##FUNC_NAME[lane],                     \
+                            lane_counts[lane]);                                \
                     }                                                          \
                 }                                                              \
             }                                                                  \
-        } else {                                                               \
-            /* Count-only: popcount */                                         \
+        } else if (COLLECT_POSITIONS && CANONICAL) {                           \
+            /* Canonical positions: per-iteration scatter.                      \
+             * Avoids old code's 64 scalar strand bit-extractions. */          \
             __m256i fs = _mm256_set1_epi32((int)kmer_idx);                    \
             __m256i ls = _mm256_set1_epi32(                                   \
                 (int)(kmer_idx + window_size - 1));                            \
@@ -1586,73 +1571,87 @@ static inline size_t FUNC_NAME(                                                \
                 _mm256_cmpeq_epi32(min_pos_vec, fs),                          \
                 _mm256_cmpeq_epi32(min_pos_vec, ls));                         \
             if (kmer_idx >= last_lane_limit) {                                 \
-                __m256i kv = _mm256_set1_epi32((int)kmer_idx);                \
                 __m256i lims = _mm256_sub_epi32(                              \
                     _mm256_load_si256((const __m256i*)chunk_ends),             \
                     _mm256_load_si256((const __m256i*)chunk_starts));          \
                 isy = _mm256_and_si256(isy,                                   \
-                    _mm256_cmpgt_epi32(lims, kv));                            \
+                    _mm256_cmpgt_epi32(lims, fs));                            \
+            }                                                                  \
+            int km = _mm256_movemask_ps(_mm256_castsi256_ps(isy));            \
+            while (km) {                                                       \
+                int lane = __builtin_ctz(km);                                  \
+                size_t lc = lane_counts[lane];                                 \
+                ts_pos_bufs_##FUNC_NAME[lane][lc] =                            \
+                    (uint32_t)(chunk_starts[lane] + kmer_idx);                 \
+                ts_str_bufs_##FUNC_NAME[lane][lc] =                            \
+                    (overall_strand >> lane) & 1;                              \
+                lane_counts[lane] = lc + 1;                                    \
+                km &= km - 1;                                                  \
+            }                                                                  \
+        } else {                                                               \
+            /* Count-only: syncmer check + popcount */                         \
+            __m256i fs = _mm256_set1_epi32((int)kmer_idx);                    \
+            __m256i ls = _mm256_set1_epi32(                                   \
+                (int)(kmer_idx + window_size - 1));                            \
+            __m256i isy = _mm256_or_si256(                                    \
+                _mm256_cmpeq_epi32(min_pos_vec, fs),                          \
+                _mm256_cmpeq_epi32(min_pos_vec, ls));                         \
+            if (kmer_idx >= last_lane_limit) {                                 \
+                __m256i lims = _mm256_sub_epi32(                              \
+                    _mm256_load_si256((const __m256i*)chunk_ends),             \
+                    _mm256_load_si256((const __m256i*)chunk_starts));          \
+                isy = _mm256_and_si256(isy,                                   \
+                    _mm256_cmpgt_epi32(lims, fs));                            \
             }                                                                  \
             syncmer_count += __builtin_popcount(                               \
                 _mm256_movemask_ps(_mm256_castsi256_ps(isy)));                \
         }                                                                      \
     } /* end main loop */                                                      \
                                                                                \
-    /* Process remaining partial batch (positions only) */                     \
-    if (COLLECT_POSITIONS) {                                                   \
+    /* Process remaining partial batch / concatenate (positions only) */        \
+    if (COLLECT_POSITIONS && !CANONICAL) {                                     \
         size_t partial = batch_count % 8;                                      \
         if (partial > 0) {                                                     \
-            for (size_t pi = partial; pi < 8; pi++) {                          \
+            for (size_t pi = partial; pi < 8; pi++)                            \
                 batch_pos[pi] = _mm256_setzero_si256();                        \
-                if (CANONICAL) batch_strand[pi] = 0;                           \
-            }                                                                  \
             __m256i tp[8];                                                     \
             csyncmer_transpose_8x8(batch_pos, tp);                            \
+            __m256i bb = _mm256_set1_epi32((int)batch_base_kmer);             \
             for (int lane = 0; lane < 8; lane++) {                             \
                 alignas(32) uint32_t absp[8];                                  \
                 for (int j = 0; j < 8; j++)                                    \
                     absp[j] = (uint32_t)(chunk_starts[lane] +                  \
                                          batch_base_kmer + j);                \
                 __m256i ap = _mm256_load_si256((__m256i*)absp);                \
-                __m256i fs = ap;                                               \
-                __m256i ls = _mm256_add_epi32(ap,                              \
+                __m256i bfs = ap;                                              \
+                __m256i bls = _mm256_add_epi32(ap,                             \
                     _mm256_set1_epi32((int)(window_size - 1)));                \
                 __m256i lo = _mm256_set1_epi32((int)chunk_starts[lane]);       \
                 __m256i amp = _mm256_add_epi32(tp[lane], lo);                  \
-                __m256i isy = _mm256_or_si256(                                \
-                    _mm256_cmpeq_epi32(amp, fs),                              \
-                    _mm256_cmpeq_epi32(amp, ls));                             \
+                __m256i bisy = _mm256_or_si256(                                \
+                    _mm256_cmpeq_epi32(amp, bfs),                              \
+                    _mm256_cmpeq_epi32(amp, bls));                             \
                 alignas(32) uint32_t va[8];                                    \
                 for (int j = 0; j < 8; j++) {                                 \
                     size_t ak = chunk_starts[lane] + batch_base_kmer + j;     \
                     va[j] = (j < (int)partial && ak < chunk_ends[lane])       \
                         ? 0xFFFFFFFF : 0;                                      \
                 }                                                              \
-                isy = _mm256_and_si256(isy,                                   \
-                    _mm256_load_si256((__m256i*)va));                          \
-                int km = _mm256_movemask_ps(_mm256_castsi256_ps(isy));         \
-                if (km && lane_counts[lane] + 8 <= max_per_lane) {             \
-                    int skm = (~km) & 0xFF;                                    \
-                    if (CANONICAL) {                                           \
-                        size_t oc_ = lane_counts[lane];                        \
-                        lane_counts[lane] = csyncmer_append_filtered(          \
-                            ap, skm,                                           \
-                            ts_pos_bufs_##FUNC_NAME[lane],                     \
-                            lane_counts[lane]);                                \
-                        for (int j = 0; j < 8; j++) {                         \
-                            if ((km >> j) & 1)                                 \
-                                ts_str_bufs_##FUNC_NAME[lane][oc_++] =        \
-                                    (batch_strand[j] >> lane) & 1;            \
-                        }                                                      \
-                    } else {                                                   \
-                        lane_counts[lane] = csyncmer_append_filtered(          \
-                            ap, skm,                                           \
-                            ts_pos_bufs_##FUNC_NAME[lane],                     \
-                            lane_counts[lane]);                                \
-                    }                                                          \
+                bisy = _mm256_and_si256(bisy,                                  \
+                    _mm256_load_si256((__m256i*)va));                           \
+                int bkm = _mm256_movemask_ps(                                  \
+                    _mm256_castsi256_ps(bisy));                                \
+                if (bkm && lane_counts[lane] + 8 <= max_per_lane) {            \
+                    int skm = (~bkm) & 0xFF;                                   \
+                    lane_counts[lane] = csyncmer_append_filtered(              \
+                        ap, skm,                                               \
+                        ts_pos_bufs_##FUNC_NAME[lane],                         \
+                        lane_counts[lane]);                                    \
                 }                                                              \
             }                                                                  \
         }                                                                      \
+    }                                                                          \
+    if (COLLECT_POSITIONS) {                                                   \
         /* Concatenate lane buffers */                                         \
         size_t total = 0;                                                      \
         for (int i = 0; i < 8; i++) {                                          \

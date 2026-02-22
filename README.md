@@ -56,9 +56,9 @@ gcc -std=c11 -o example -march=native example.c
 
 | Function | Output | Speed | Notes |
 |----------|--------|-------|-------|
-| `csyncmer_twostack_simd_32_count` | Count | ~1400 MB/s | AVX2, fastest |
+| `csyncmer_twostack_simd_32_count` | Count | ~1390-1460 MB/s | AVX2, fastest |
 | `csyncmer_twostack_simd_32_positions` | Positions | ~780-910 MB/s | AVX2 |
-| `csyncmer_iterator_*_64` | Positions | ~370-420 MB/s | Scalar, portable, exact |
+| `csyncmer_iterator_*_64` | Positions | ~380-430 MB/s | Scalar, portable, exact |
 
 **Canonical (strand-independent):**
 
@@ -66,7 +66,7 @@ gcc -std=c11 -o example -march=native example.c
 |----------|--------|-------|-------|
 | `csyncmer_twostack_simd_32_canonical_count` | Count | ~1290 MB/s | AVX2 |
 | `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~450-480 MB/s | AVX2 |
-| `csyncmer_iterator_*_canonical_64` | Positions + strands | ~278-293 MB/s | Scalar, portable, exact |
+| `csyncmer_iterator_*_canonical_64` | Positions + strands | ~285-330 MB/s | Scalar, portable, exact |
 
 All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
 Speeds measured on chr19 (59 MB), best-of-5, Zen 3 CPU.

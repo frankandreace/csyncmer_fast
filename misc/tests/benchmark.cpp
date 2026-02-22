@@ -433,21 +433,21 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
 #if defined(__AVX2__)
+    size_t max_positions = sequence_input_length;
+
     // TWOSTACK SIMD count-only
+    size_t twostack_count;
     printf("[[SYNCMERS nth32 twostack-count]]\n");
     start_time = clock();
-    {
-        volatile size_t count = csyncmer_twostack_simd_32_count(sequence_input, sequence_input_length, K, S);
-        printf("[NTH32_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", (size_t)count);
-    }
+    twostack_count = csyncmer_twostack_simd_32_count(sequence_input, sequence_input_length, K, S);
     end_time = clock();
+    printf("[NTH32_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", twostack_count);
     print_benchmark("NTH32_TWOSTACK_COUNT", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
     // TWOSTACK SIMD with position collection
     printf("[[SYNCMERS nth32 twostack-pos]]\n");
     {
-        size_t max_positions = sequence_input_length;
         uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
         if (positions) {
             start_time = clock();
@@ -455,26 +455,26 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
             end_time = clock();
             printf("[NTH32_TWOSTACK_POS]:: COMPUTED %zu CLOSED SYNCMERS\n", count);
             print_benchmark("NTH32_TWOSTACK_POS", start_time, end_time, fasta_filename, filePtr);
+            if (count != twostack_count)
+                fprintf(stderr, "MISMATCH: twostack count=%zu positions=%zu\n", twostack_count, count);
             free(positions);
         }
     }
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
     // Canonical TWOSTACK SIMD count-only
+    size_t canon_twostack_count;
     printf("[[SYNCMERS nth32 canonical-twostack-count]]\n");
     start_time = clock();
-    {
-        volatile size_t count = csyncmer_twostack_simd_32_canonical_count(sequence_input, sequence_input_length, K, S);
-        printf("[NTH32_CANON_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", (size_t)count);
-    }
+    canon_twostack_count = csyncmer_twostack_simd_32_canonical_count(sequence_input, sequence_input_length, K, S);
     end_time = clock();
+    printf("[NTH32_CANON_TWOSTACK_COUNT]:: COMPUTED %zu CLOSED SYNCMERS\n", canon_twostack_count);
     print_benchmark("NTH32_CANON_TWOSTACK_COUNT", start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
     // Canonical TWOSTACK SIMD with position and strand collection
     printf("[[SYNCMERS nth32 canonical-twostack-pos]]\n");
     {
-        size_t max_positions = sequence_input_length;
         uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
         uint8_t* strands = (uint8_t*)aligned_alloc(32, max_positions);
         if (positions && strands) {
@@ -484,6 +484,8 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
             end_time = clock();
             printf("[NTH32_CANON_TWOSTACK_POS]:: COMPUTED %zu CLOSED SYNCMERS\n", count);
             print_benchmark("NTH32_CANON_TWOSTACK_POS", start_time, end_time, fasta_filename, filePtr);
+            if (count != canon_twostack_count)
+                fprintf(stderr, "MISMATCH: canonical count=%zu positions=%zu\n", canon_twostack_count, count);
         }
         free(positions);
         free(strands);
@@ -499,8 +501,14 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
 }
 
 // ============================================================================
-// QUICK BENCHMARK
+// QUICK BENCHMARK (best-of-3, sequence-length throughput)
 // ============================================================================
+
+#define QUICK_BENCH_RUNS 3
+
+static void quick_print(const char* name, size_t count, double best_elapsed, double seq_mb) {
+    printf("%-25s %10zu %12.0f\n", name, count, seq_mb / best_elapsed);
+}
 
 int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
 
@@ -512,44 +520,53 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
     stream_close(seqStream);
     fclose(seqFile);
 
-    off_t file_size = get_file_size(fasta_filename);
-    double file_size_mb = file_size / (1024.0 * 1024.0);
-    size_t num;
+    double seq_mb = length / 1e6;
 
     bool run_32 = (strcmp(filter, "32") == 0 || strcmp(filter, "all") == 0);
     bool run_64 = (strcmp(filter, "64") == 0 || strcmp(filter, "all") == 0);
 
+    printf("Sequence: %.1f MB, K=%d, S=%d (best of %d runs)\n\n", seq_mb, K, S, QUICK_BENCH_RUNS);
     printf("%-25s %10s %12s\n", "Implementation", "Syncmers", "Speed (MB/s)");
     printf("%-25s %10s %12s\n", "-------------------------", "----------", "------------");
 
     if (run_64) {
         // Iterator benchmark (scalar, portable, exact)
         {
-            clock_t start = clock();
-            num = 0;
-            size_t pos;
-            CsyncmerIterator64* it = csyncmer_iterator_create_64(sequence, length, K, S);
-            if (it) {
-                while (csyncmer_iterator_next_64(it, &pos)) num++;
-                csyncmer_iterator_destroy_64(it);
+            double best = 1e9;
+            size_t num = 0;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                size_t pos, c = 0;
+                clock_t start = clock();
+                CsyncmerIterator64* it = csyncmer_iterator_create_64(sequence, length, K, S);
+                if (it) {
+                    while (csyncmer_iterator_next_64(it, &pos)) c++;
+                    csyncmer_iterator_destroy_64(it);
+                }
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+                num = c;
             }
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH64_ITERATOR_POS", num, file_size_mb / elapsed);
+            quick_print("NTH64_ITERATOR_POS", num, best, seq_mb);
         }
 
         // Canonical iterator benchmark (strand-independent, scalar, exact)
         {
-            clock_t start = clock();
-            num = 0;
-            size_t pos;
-            int strand;
-            CsyncmerIteratorCanonical64* it = csyncmer_iterator_create_canonical_64(sequence, length, K, S);
-            if (it) {
-                while (csyncmer_iterator_next_canonical_64(it, &pos, &strand)) num++;
-                csyncmer_iterator_destroy_canonical_64(it);
+            double best = 1e9;
+            size_t num = 0;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                size_t pos, c = 0;
+                int strand;
+                clock_t start = clock();
+                CsyncmerIteratorCanonical64* it = csyncmer_iterator_create_canonical_64(sequence, length, K, S);
+                if (it) {
+                    while (csyncmer_iterator_next_canonical_64(it, &pos, &strand)) c++;
+                    csyncmer_iterator_destroy_canonical_64(it);
+                }
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+                num = c;
             }
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH64_CANONICAL_POS", num, file_size_mb / elapsed);
+            quick_print("NTH64_CANONICAL_POS", num, best, seq_mb);
         }
     }
 
@@ -557,56 +574,93 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
         // Scalar fused implementations (no AVX2 needed)
         {
             size_t num;
-            clock_t start = clock();
-            csyncmer_nthash32_fused_rescan(sequence, length, K, S, &num);
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_FUSED_RESCAN", num, file_size_mb / elapsed);
+            double best = 1e9;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                clock_t start = clock();
+                csyncmer_nthash32_fused_rescan(sequence, length, K, S, &num);
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+            }
+            quick_print("NTH32_FUSED_RESCAN", num, best, seq_mb);
         }
         {
             size_t num;
-            clock_t start = clock();
-            csyncmer_nthash32_fused_twostack(sequence, length, K, S, &num);
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_FUSED_TWOSTACK", num, file_size_mb / elapsed);
+            double best = 1e9;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                clock_t start = clock();
+                csyncmer_nthash32_fused_twostack(sequence, length, K, S, &num);
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+            }
+            quick_print("NTH32_FUSED_TWOSTACK", num, best, seq_mb);
         }
 
 #if defined(__AVX2__)
+        size_t max_positions = length;
+
         // TWOSTACK count-only (no position collection)
+        size_t twostack_count;
         {
-            clock_t start = clock();
-            size_t count = csyncmer_twostack_simd_32_count(sequence, length, K, S);
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_TWOSTACK_COUNT", count, file_size_mb / elapsed);
+            double best = 1e9;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                clock_t start = clock();
+                twostack_count = csyncmer_twostack_simd_32_count(sequence, length, K, S);
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+            }
+            quick_print("NTH32_TWOSTACK_COUNT", twostack_count, best, seq_mb);
         }
 
         // TWOSTACK with position collection
-        size_t max_positions = length;
-        uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
-        if (positions) {
-            clock_t start = clock();
-            size_t count = csyncmer_twostack_simd_32_positions(sequence, length, K, S, positions, max_positions);
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_TWOSTACK_POS", count, file_size_mb / elapsed);
-            free(positions);
+        {
+            uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+            if (positions) {
+                double best = 1e9;
+                size_t count = 0;
+                for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                    clock_t start = clock();
+                    count = csyncmer_twostack_simd_32_positions(sequence, length, K, S, positions, max_positions);
+                    double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                    if (elapsed < best) best = elapsed;
+                }
+                quick_print("NTH32_TWOSTACK_POS", count, best, seq_mb);
+                if (count != twostack_count)
+                    fprintf(stderr, "MISMATCH: twostack count=%zu positions=%zu\n", twostack_count, count);
+                free(positions);
+            }
         }
 
         // Canonical TWOSTACK count-only
+        size_t canon_twostack_count;
         {
-            clock_t start = clock();
-            size_t count = csyncmer_twostack_simd_32_canonical_count(sequence, length, K, S);
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_CANON_TWOSTACK_CNT", count, file_size_mb / elapsed);
+            double best = 1e9;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                clock_t start = clock();
+                canon_twostack_count = csyncmer_twostack_simd_32_canonical_count(sequence, length, K, S);
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+            }
+            quick_print("NTH32_CANON_TWOSTACK_CNT", canon_twostack_count, best, seq_mb);
         }
 
         // Canonical TWOSTACK with position and strand collection
-        uint8_t* strands = (uint8_t*)aligned_alloc(32, max_positions);
-        if (positions && strands) {
-            positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
-            clock_t start = clock();
-            size_t count = csyncmer_twostack_simd_32_canonical_positions(
-                sequence, length, K, S, positions, strands, max_positions);
-            double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("%-25s %10zu %12.2f\n", "NTH32_CANON_TWOSTACK_POS", count, file_size_mb / elapsed);
+        {
+            uint32_t* positions = (uint32_t*)aligned_alloc(32, max_positions * sizeof(uint32_t));
+            uint8_t* strands = (uint8_t*)aligned_alloc(32, max_positions);
+            if (positions && strands) {
+                double best = 1e9;
+                size_t count = 0;
+                for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                    clock_t start = clock();
+                    count = csyncmer_twostack_simd_32_canonical_positions(
+                        sequence, length, K, S, positions, strands, max_positions);
+                    double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                    if (elapsed < best) best = elapsed;
+                }
+                quick_print("NTH32_CANON_TWOSTACK_POS", count, best, seq_mb);
+                if (count != canon_twostack_count)
+                    fprintf(stderr, "MISMATCH: canonical count=%zu positions=%zu\n", canon_twostack_count, count);
+            }
             free(positions);
             free(strands);
         }

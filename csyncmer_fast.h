@@ -279,11 +279,14 @@ static inline size_t FUNC_NAME(                                                \
     return syncmer_count;                                                      \
 }
 
-/* Generate forward and canonical RESCAN internal functions */
+/* Generate forward and canonical RESCAN internal functions.
+   These are internal: used as fallback by twostack SIMD for small inputs
+   (num_kmers < 64) or large windows (window_size > 64).
+   Public API: csyncmer_twostack_simd_32_* or csyncmer_iterator_*_64. */
 CSYNCMER_DEFINE_RESCAN_32(csyncmer_rescan_32_, 0)
 CSYNCMER_DEFINE_RESCAN_32(csyncmer_canonical_rescan_32_, 1)
 
-/* Public API wrappers preserving existing signatures */
+/* Internal wrappers for the rescan fallback */
 
 static inline size_t csyncmer_rescan_32_count(
     const char* sequence,

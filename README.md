@@ -92,16 +92,9 @@ The library provides two algorithms for syncmer extraction:
 
 **twostack** (AVX2 SIMD, batch): Splits the sequence into 8 chunks processed in parallel. Uses the two-stack (prefix-suffix) sliding minimum algorithm ([Groot Koerkamp & Martayan, SEA 2025](https://curiouscoding.nl/posts/fast-minimizers/); independently implemented in [simd-minimizers](https://github.com/rust-seq/simd-minimizers)) for O(1) amortized operations per element. Packs hash (upper 16 bits) + position (lower 16 bits) into 32-bit values for SIMD comparison. Requires the full sequence upfront.
 
-**rescan** (scalar, streaming iterator): O(1) amortized — maintains a circular buffer and only rescans the window when the current minimum falls out (~6% of iterations). Branch-free minimum update using conditional moves. Uses full 64-bit hashes (no approximation). Works on any CPU without SIMD and processes one syncmer at a time, making it suitable for streaming pipelines.
+**rescan** (scalar, streaming iterator): O(1) amortized — maintains a circular buffer and only rescans the window when the current minimum falls out (~6% of iterations). Branch-free minimum update using conditional moves. Works on any CPU without SIMD and processes one syncmer at a time, making it suitable for streaming pipelines.
 
-**ntHash Rolling Hash**: Both 32-bit and 64-bit variants (forward-strand only, not canonical). Uses direct ASCII lookup tables to skip 2-bit encoding overhead.
-
-**Hash size: 32-bit vs 64-bit**: Syncmer detection hashes s-mers and finds the minimum within a window of W = K - S + 1 elements. For this *selection* step, 32-bit is sufficient — collision probability per window is ~W^2/2^32 (negligible for typical W < 100). 64-bit hashes matter when using s-mer hashes as *identifiers* downstream (e.g. as a hash table key, for MinHash sketching, or k-mer indexing).
-| Use case | 32-bit | 64-bit |
-|----------|--------|--------|
-| Syncmer selection (which s-mers?) | sufficient | overkill |
-| S-mer identity (e.g. hash table key) | too many collisions | sufficient |
-| MinHash / sketching | unusable | standard |
+**Hash precision**: The SIMD twostack path uses 16-bit hash approximation (upper 16 bits of a 32-bit ntHash). The iterator API (`csyncmer_iterator_*_64`) uses 64-bit hashes with no approximation.
 
 **Canonical vs Forward-only**: Canonical implementations use `min(forward_hash, rc_hash)` for strand-independent results. Use canonical when you need consistent syncmer positions regardless of which DNA strand is sequenced.
 

@@ -493,7 +493,6 @@ inline size_t csyncmer_nthash32_fused_rescan(
     }
 
     *num_syncmers = syncmer_count;
-    printf("[NTHASH32_FUSED_RESCAN]:: COMPUTED %lu CLOSED SYNCMERS\n", syncmer_count);
     return syncmer_count;
 }
 
@@ -615,7 +614,6 @@ inline size_t csyncmer_nthash32_fused_twostack(
     }
 
     *num_syncmers = syncmer_count;
-    printf("[NTHASH32_FUSED_TWOSTACK]:: COMPUTED %lu CLOSED SYNCMERS\n", syncmer_count);
     return syncmer_count;
 }
 
@@ -788,6 +786,11 @@ inline size_t csyncmer_nthash32_simd_rescan(
         return 0;
     }
 
+    // simd_argmin_window uses a temp[32] buffer — fall back for large windows
+    if (K - S + 1 > 32) {
+        return csyncmer_nthash32_fused_rescan(sequence, length, K, S, num_syncmers);
+    }
+
     static const auto F_ASCII = make_ascii_hash_table_local();
     static const auto IDX_ASCII = make_ascii_to_idx_local();
 
@@ -880,8 +883,11 @@ static inline size_t csyncmer_nthash32_simd_multiwindow(
     size_t num_smers = length - S + 1;
     size_t num_kmers = num_smers - window_size + 1;
 
-    // Fall back to scalar for small inputs
-    if (num_kmers < 8) {
+    // Fall back to scalar for small inputs or large windows
+    // The ring buffer mirror area is 32 entries; SIMD loads read 8 consecutive
+    // elements at start_idx+j, so we need start_idx + window_size - 1 + 7 < BUF_SIZE + 32.
+    // With max start_idx=56 (8-aligned mod 64): window_size must be <= 32.
+    if (num_kmers < 8 || window_size > 32) {
         return csyncmer_rescan_32_count(
             sequence, length, K, S, num_syncmers);
     }

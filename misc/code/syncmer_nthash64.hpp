@@ -399,7 +399,9 @@ static inline size_t csyncmer_nthash64_simd_multiwindow(
     size_t num_smers = length - S + 1;
     size_t num_kmers = num_smers - window_size + 1;
 
-    if (num_kmers < 8) {
+    // Fall back to scalar for small inputs or large windows
+    // Same mirror-area constraint as nthash32_simd_multiwindow: window_size <= 32
+    if (num_kmers < 8 || window_size > 32) {
         return csyncmer_nthash64_rescan_count(
             sequence, length, K, S, num_syncmers);
     }

@@ -78,6 +78,12 @@ When `chunk_ends[i] < chunk_starts[i]` (boundary chunks), compute `last_lane_lim
   benefit because the RC hash computation dominates, not position collection)
 - Count-only variants are ~2x faster than position-collecting variants
 - Different hash sizes (32/64-bit) produce different syncmer counts due to tie-breaking
+- **Legacy 64-bit code uses 32-bit comparison**: `misc/code/syncmer_nthash64.hpp`
+  functions (`csyncmer_nthash64_rescan_count` at line ~305, `csyncmer_nthash64_simd_multiwindow`
+  at line ~433) compute full 64-bit ntHash but compare only `(uint32_t)hash` (lower 32 bits).
+  This produces ~0.5-1.6% different counts from the true 64-bit iterator API in csyncmer_fast.h.
+  The test suite prints `[NOTE] 64-bit legacy implementations use 32-bit comparison internally`.
+  These are reference/legacy implementations only — the public API in csyncmer_fast.h is correct
 
 ## Benchmark Speeds (chr19, 59 MB, best-of-5)
 

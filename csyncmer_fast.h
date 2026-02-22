@@ -211,8 +211,10 @@ static inline size_t FUNC_NAME(                                                \
         }                                                                      \
         syncmer_count++;                                                       \
         if (out_positions && syncmer_count >= max_positions) {                  \
+            fprintf(stderr, "csyncmer error: output buffer too small"          \
+                    " (max_positions=%zu)\n", max_positions);                   \
             free(hash_buffer);                                                 \
-            return syncmer_count;                                              \
+            return 0;                                                          \
         }                                                                      \
     }                                                                          \
                                                                                \
@@ -265,8 +267,10 @@ static inline size_t FUNC_NAME(                                                \
             }                                                                  \
             syncmer_count++;                                                   \
             if (out_positions && syncmer_count >= max_positions) {              \
+                fprintf(stderr, "csyncmer error: output buffer too small"      \
+                        " (max_positions=%zu)\n", max_positions);              \
                 free(hash_buffer);                                             \
-                return syncmer_count;                                          \
+                return 0;                                                      \
             }                                                                  \
         }                                                                      \
     }                                                                          \
@@ -1654,21 +1658,28 @@ static inline size_t FUNC_NAME(                                                \
     if (COLLECT_POSITIONS) {                                                   \
         /* Concatenate lane buffers */                                         \
         size_t total = 0;                                                      \
+        for (int i = 0; i < 8; i++) total += lane_counts[i];                  \
+        if (total > max_positions) {                                           \
+            fprintf(stderr, "csyncmer error: output buffer too small"          \
+                    " (need %zu, have %zu)\n", total, max_positions);          \
+            free(delay_buf); free(packed);                                     \
+            return 0;                                                          \
+        }                                                                      \
+        size_t off = 0;                                                        \
         for (int i = 0; i < 8; i++) {                                          \
-            if (lane_counts[i] > 0 &&                                          \
-                total + lane_counts[i] <= max_positions) {                     \
-                memcpy(out_positions + total,                                   \
+            if (lane_counts[i] > 0) {                                          \
+                memcpy(out_positions + off,                                     \
                        ts_pos_bufs_##FUNC_NAME[i],                             \
                        lane_counts[i] * sizeof(uint32_t));                     \
                 if (CANONICAL && out_strands) {                                \
-                    memcpy(out_strands + total,                                 \
+                    memcpy(out_strands + off,                                   \
                            ts_str_bufs_##FUNC_NAME[i],                         \
                            lane_counts[i]);                                    \
                 }                                                              \
-                total += lane_counts[i];                                       \
+                off += lane_counts[i];                                         \
             }                                                                  \
         }                                                                      \
-        syncmer_count = total;                                                 \
+        syncmer_count = off;                                                   \
     }                                                                          \
                                                                                \
     free(delay_buf);                                                           \

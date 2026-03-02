@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1007,11 +1008,21 @@ static inline void csyncmer_pack_seq_2bit(
     uint8_t* out
 ) {
 #ifdef __BMI2__
-    // Fast path: pack 8 chars (2 output bytes) at a time using PEXT
+    // Fast path: batch 4 PEXT calls into one 8-byte write (32 chars → 8 bytes)
     size_t i = 0;
     size_t byte_idx = 0;
     const uint8_t* useq = (const uint8_t*)seq;
 
+    for (; i + 32 <= len; i += 32, byte_idx += 8) {
+        uint64_t p0 = csyncmer_pack_8_pext(useq + i);
+        uint64_t p1 = csyncmer_pack_8_pext(useq + i + 8);
+        uint64_t p2 = csyncmer_pack_8_pext(useq + i + 16);
+        uint64_t p3 = csyncmer_pack_8_pext(useq + i + 24);
+        uint64_t combined = p0 | (p1 << 16) | (p2 << 32) | (p3 << 48);
+        memcpy(out + byte_idx, &combined, 8);
+    }
+
+    // Remainder: 8 chars (2 bytes) at a time
     for (; i + 8 <= len; i += 8, byte_idx += 2) {
         uint16_t packed = csyncmer_pack_8_pext(useq + i);
         memcpy(out + byte_idx, &packed, 2);

@@ -84,7 +84,7 @@ make
 
 ### FASTQ Multi-Read Mode
 
-Benchmark syncmer throughput on real FASTQ reads (e.g. HiFi). The multi-read mode processes 8 reads simultaneously in AVX2 lanes, eliminating the ~60% warmup overhead that single-read SIMD has on ~15 kb reads.
+Special code path for FASTQ reads (e.g. HiFi). This multi-read mode processes 8 reads simultaneously in AVX2 lanes, eliminating the ~60% warmup overhead that single-read SIMD has on kilobase-sized reads with kilobase-sized `-w` values.
 
 ```bash
 cd misc/fastq

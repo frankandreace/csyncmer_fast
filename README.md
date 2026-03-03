@@ -82,6 +82,20 @@ make
 ./benchmark /path/to/sequence.fasta 31 15 output.tsv     # full benchmark suite
 ```
 
+### FASTQ Multi-Read Mode
+
+Benchmark syncmer throughput on real FASTQ reads (e.g. HiFi). The multi-read mode processes 8 reads simultaneously in AVX2 lanes, eliminating the ~60% warmup overhead that single-read SIMD has on ~15 kb reads.
+
+```bash
+cd misc/fastq
+make
+./bench_syncmer_fastq ~/data/reads.fastq                  # multi-8 (default)
+./bench_syncmer_fastq -single ~/data/reads.fastq          # single-read SIMD
+./bench_syncmer_fastq -k 31 -w 1022 ~/data/reads.fastq   # custom k/w
+```
+
+A reference Rust benchmark (`bench_syncmer_fastq.rs`) using [simd-minimizers](https://github.com/rust-seq/simd-minimizers) is included for cross-library comparison.
+
 ### Closed Syncmers
 
 A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains is either at the first or last position (scanning left to right).
@@ -111,6 +125,10 @@ misc/
     syncmer_nthash128.hpp         # ntHash128 implementations
     legacy_infrastructure.hpp     # SeqHash, CircularArray, etc.
     simd/                         # C++ SIMD utilities
+  fastq/                     # FASTQ multi-read mode (8 reads in 8 AVX2 lanes)
+    csyncmer_fastq.h              # Multi-read 8-lane SIMD extension header
+    bench_syncmer_fastq.c         # C benchmark (csyncmer_fast multi-8)
+    bench_syncmer_fastq.rs        # Rust benchmark (simd-minimizers, for reference)
   python/                    # Python bindings
   syng/                      # External seqhash library
 ```

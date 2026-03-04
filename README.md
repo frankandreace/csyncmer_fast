@@ -109,10 +109,23 @@ Special code path for FASTQ reads (e.g. HiFi). This multi-read mode processes 8 
 ```bash
 cd misc/fastq
 make
-./bench_syncmer_fastq ~/data/reads.fastq                  # multi-8 (default)
-./bench_syncmer_fastq -single ~/data/reads.fastq          # single-read SIMD
-./bench_syncmer_fastq -k 31 -w 1022 ~/data/reads.fastq   # custom k/w
+./bench_syncmer_fastq ~/data/reads.fastq                         # multi-8 monolithic (default)
+./bench_syncmer_fastq -twopass ~/data/reads.fastq                # two-pass: hash then twostack (with strand)
+./bench_syncmer_fastq -twopass-nostrand ~/data/reads.fastq       # two-pass: hash then twostack (no strand, fastest)
+./bench_syncmer_fastq -hashonly ~/data/reads.fastq               # hash pass only (returns s-mer count)
+./bench_syncmer_fastq -packonly ~/data/reads.fastq               # pack+interleave only (I/O bound)
+./bench_syncmer_fastq -single ~/data/reads.fastq                 # single-read SIMD (baseline)
+./bench_syncmer_fastq -k 31 -w 1022 ~/data/reads.fastq          # custom k/w
 ```
+
+**Modes:**
+- **default** (`multi-8-bucketed`): Monolithic pass — hash computation and twostack sliding minimum fused together. Canonical (tracks strand).
+- **`-twopass`**: Split into hash-only pass (writes to intermediate buffer) then twostack pass. Canonical. Same syncmer output as default.
+- **`-twopass-nostrand`**: Like `-twopass` but skips strand tracking. Fastest mode (~1.9 GB/s). Produces identical syncmer positions.
+- **`-hashonly`** / **`-packonly`**: Isolate individual pipeline stages for profiling.
+- **`-single`**: One-read-at-a-time SIMD (baseline for measuring multi-read speedup).
+
+All syncmer-producing modes must agree on count (correctness check). The two-pass split enables independent optimization of hash computation and sliding minimum.
 
 A reference Rust benchmark (`bench_syncmer_fastq.rs`) using [simd-minimizers](https://github.com/rust-seq/simd-minimizers) is included for cross-library comparison.
 
@@ -147,8 +160,12 @@ misc/
     legacy_infrastructure.hpp     # SeqHash, CircularArray, etc.
     simd/                         # C++ SIMD utilities
   fastq/                     # FASTQ multi-read mode (8 reads in 8 AVX2 lanes)
-    csyncmer_fastq.h              # Multi-read 8-lane SIMD extension header
-    bench_syncmer_fastq.c         # C benchmark (csyncmer_fast multi-8)
+    csyncmer_fastq.h              # Multi-read 8-lane monolithic SIMD
+    csyncmer_fastq_hash.h         # Hash-only pass (two-pass mode)
+    csyncmer_fastq_pack.h         # 2-bit DNA packing + interleaving
+    csyncmer_fastq_split.h        # Twostack-only pass (two-pass mode, no strand)
+    csyncmer_fastq_twostack.h     # Twostack pass with strand tracking
+    bench_syncmer_fastq.c         # C benchmark (all modes)
     bench_syncmer_fastq.rs        # Rust benchmark (simd-minimizers, for reference)
   python/                    # Python bindings
   syng/                      # External seqhash library

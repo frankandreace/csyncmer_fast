@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "csyncmer_fastq.h"
+#include "csyncmer_fastq_split.h"
 
 #define N_BUCKETS    256  /* enough for fine-grained bucket_shift values */
 
@@ -27,7 +28,7 @@ static double now(void) {
 }
 
 int main(int argc, char **argv) {
-    int k = 31, w = 1022, single_mode = 0, bucket_shift = 11;
+    int k = 31, w = 1022, single_mode = 0, twopass_mode = 0, hashonly_mode = 0, packonly_mode = 0, twopass_nostrand_mode = 0, bucket_shift = 11;
     char *filename = NULL;
 
     for (int i = 1; i < argc; i++) {
@@ -35,21 +36,31 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-w") && i+1 < argc) w = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-b") && i+1 < argc) bucket_shift = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-single")) single_mode = 1;
+        else if (!strcmp(argv[i], "-twopass")) twopass_mode = 1;
+        else if (!strcmp(argv[i], "-hashonly")) hashonly_mode = 1;
+        else if (!strcmp(argv[i], "-packonly")) packonly_mode = 1;
+        else if (!strcmp(argv[i], "-twopass-nostrand")) twopass_nostrand_mode = 1;
         else filename = argv[i];
     }
     if (!filename) {
-        fprintf(stderr, "Usage: %s [-k 31] [-w 1022] [-single] [-b bucket_shift] input.fastq\n", argv[0]);
-        fprintf(stderr, "  -single  Use single-sequence API instead of multi (8-lane SIMD)\n");
-        fprintf(stderr, "  -b N     Bucket shift for length grouping (default 11 = 2048bp)\n");
+        fprintf(stderr, "Usage: %s [-k 31] [-w 1022] [-single] [-twopass] [-hashonly] [-b bucket_shift] input.fastq\n", argv[0]);
+        fprintf(stderr, "  -single    Use single-sequence API instead of multi (8-lane SIMD)\n");
+        fprintf(stderr, "  -twopass   Use two-pass multi-8 (separate hash + twostack passes)\n");
+        fprintf(stderr, "  -hashonly  Benchmark hash pass only (no twostack)\n");
+        fprintf(stderr, "  -b N       Bucket shift for length grouping (default 11 = 2048bp)\n");
         fprintf(stderr, "  default: multi-8 with length bucketing (same as syng)\n");
         return 1;
     }
 
     int K = w + k - 1;
     int S = k;
+    const char *mode_str = single_mode ? "single" :
+                           packonly_mode ? "multi-8-packonly" :
+                           hashonly_mode ? "multi-8-hashonly" :
+                           twopass_nostrand_mode ? "multi-8-twopass-nostrand" :
+                           twopass_mode ? "multi-8-twopass" : "multi-8-bucketed";
     fprintf(stderr, "k=%d w=%d K=%d S=%d  mode=%s  bucket_shift=%d (%d bp)\n", k, w, K, S,
-            single_mode ? "single" : "multi-8-bucketed",
-            bucket_shift, 1 << bucket_shift);
+            mode_str, bucket_shift, 1 << bucket_shift);
 
     /* mmap the FASTQ file */
     int fd = open(filename, O_RDONLY);
@@ -127,7 +138,11 @@ int main(int argc, char **argv) {
         free(strand_buf);
     } else {
         /* Multi API with length bucketing (mirrors syng's strategy) */
-        size_t work_size = csyncmer_multi_work_buf_size(max_len, K, S);
+        size_t work_size = twopass_nostrand_mode
+            ? csyncmer_split_work_buf_size(max_len, K, S)
+            : (twopass_mode || hashonly_mode || packonly_mode)
+            ? csyncmer_multi_work_buf_size_twopass(max_len, K, S)
+            : csyncmer_multi_work_buf_size(max_len, K, S);
         uint8_t *work_buf = aligned_alloc(32, work_size);
 
         uint32_t *pos_bufs[8];
@@ -142,7 +157,7 @@ int main(int argc, char **argv) {
         Bucket buckets[N_BUCKETS];
         for (int b = 0; b < N_BUCKETS; b++) buckets[b].n = 0;
 
-        fprintf(stderr, "Running syncmer detection (multi-8 bucketed)...\n");
+        fprintf(stderr, "Running syncmer detection (%s)...\n", mode_str);
         double t0 = now();
 
         for (size_t i = 0; i < nseqs; i++) {
@@ -160,12 +175,41 @@ int main(int argc, char **argv) {
                 size_t mlens[8], counts[8] = {0};
                 for (int j = 0; j < 8; j++) { mseqs[j] = bk->seq[j]; mlens[j] = bk->len[j]; }
 
-                csyncmer_twostack_simd_32_multi_canonical_positions(
-                    mseqs, mlens, (size_t)K, (size_t)S,
-                    pos_bufs, strand_bufs, max_per_read, counts,
-                    work_buf, work_size);
-
-                for (int j = 0; j < 8; j++) total_syncmers += counts[j];
+                if (packonly_mode) {
+                    total_syncmers += csyncmer_pack_only_multi(
+                        mseqs, mlens, (size_t)K, (size_t)S,
+                        work_buf, work_size);
+                } else if (hashonly_mode) {
+                    total_syncmers += csyncmer_hash_only_multi(
+                        mseqs, mlens, (size_t)K, (size_t)S,
+                        work_buf, work_size, NULL, NULL);
+                } else if (twopass_nostrand_mode) {
+                    size_t plk[8];
+                    __m256i *hb;
+                    size_t mns = csyncmer_hash_only_multi(
+                        mseqs, mlens, (size_t)K, (size_t)S,
+                        work_buf, work_size, &hb, plk);
+                    if (hb) {
+                        __m256i *ring = csyncmer_split_ring_buf(
+                            work_buf, mns, (size_t)S);
+                        csyncmer_twostack_only_multi(
+                            hb, mns, plk, (size_t)K, (size_t)S,
+                            pos_bufs, max_per_read, counts, ring);
+                        for (int j = 0; j < 8; j++) total_syncmers += counts[j];
+                    }
+                } else if (twopass_mode) {
+                    csyncmer_twostack_simd_32_multi_canonical_positions_twopass(
+                        mseqs, mlens, (size_t)K, (size_t)S,
+                        pos_bufs, strand_bufs, max_per_read, counts,
+                        work_buf, work_size);
+                    for (int j = 0; j < 8; j++) total_syncmers += counts[j];
+                } else {
+                    csyncmer_twostack_simd_32_multi_canonical_positions(
+                        mseqs, mlens, (size_t)K, (size_t)S,
+                        pos_bufs, strand_bufs, max_per_read, counts,
+                        work_buf, work_size);
+                    for (int j = 0; j < 8; j++) total_syncmers += counts[j];
+                }
                 bk->n = 0;
             }
         }
@@ -178,12 +222,41 @@ int main(int argc, char **argv) {
             size_t mlens[8] = {0}, counts[8] = {0};
             for (int j = 0; j < bk->n; j++) { mseqs[j] = bk->seq[j]; mlens[j] = bk->len[j]; }
 
-            csyncmer_twostack_simd_32_multi_canonical_positions(
-                mseqs, mlens, (size_t)K, (size_t)S,
-                pos_bufs, strand_bufs, max_per_read, counts,
-                work_buf, work_size);
-
-            for (int j = 0; j < bk->n; j++) total_syncmers += counts[j];
+            if (packonly_mode) {
+                total_syncmers += csyncmer_pack_only_multi(
+                    mseqs, mlens, (size_t)K, (size_t)S,
+                    work_buf, work_size);
+            } else if (hashonly_mode) {
+                total_syncmers += csyncmer_hash_only_multi(
+                    mseqs, mlens, (size_t)K, (size_t)S,
+                    work_buf, work_size, NULL, NULL);
+            } else if (twopass_nostrand_mode) {
+                size_t plk[8];
+                __m256i *hb;
+                size_t mns = csyncmer_hash_only_multi(
+                    mseqs, mlens, (size_t)K, (size_t)S,
+                    work_buf, work_size, &hb, plk);
+                if (hb) {
+                    __m256i *ring = csyncmer_split_ring_buf(
+                        work_buf, mns, (size_t)S);
+                    csyncmer_twostack_only_multi(
+                        hb, mns, plk, (size_t)K, (size_t)S,
+                        pos_bufs, max_per_read, counts, ring);
+                    for (int j = 0; j < bk->n; j++) total_syncmers += counts[j];
+                }
+            } else if (twopass_mode) {
+                csyncmer_twostack_simd_32_multi_canonical_positions_twopass(
+                    mseqs, mlens, (size_t)K, (size_t)S,
+                    pos_bufs, strand_bufs, max_per_read, counts,
+                    work_buf, work_size);
+                for (int j = 0; j < bk->n; j++) total_syncmers += counts[j];
+            } else {
+                csyncmer_twostack_simd_32_multi_canonical_positions(
+                    mseqs, mlens, (size_t)K, (size_t)S,
+                    pos_bufs, strand_bufs, max_per_read, counts,
+                    work_buf, work_size);
+                for (int j = 0; j < bk->n; j++) total_syncmers += counts[j];
+            }
         }
 
         elapsed = now() - t0;

@@ -35,6 +35,16 @@
 #include <x86intrin.h>
 #endif
 
+// Portable aligned allocation (MinGW lacks aligned_alloc in C11 mode)
+#if defined(_WIN32)
+#include <malloc.h>
+#define CSYNCMER_ALIGNED_ALLOC(align, size) _aligned_malloc((size), (align))
+#define CSYNCMER_ALIGNED_FREE(p) _aligned_free(p)
+#else
+#define CSYNCMER_ALIGNED_ALLOC(align, size) aligned_alloc((align), (size))
+#define CSYNCMER_ALIGNED_FREE(p) free(p)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -423,7 +433,13 @@ static uint64_t CSYNCMER_F_ASCII_64[256];
 static uint64_t CSYNCMER_RC_ASCII_64[256];
 static uint64_t CSYNCMER_RC_ROTR7_ASCII_64[256];  // Pre-computed rotr7(RC[base])
 static uint8_t CSYNCMER_IDX_ASCII[256];
-static CSYNCMER_ATOMIC_INT CSYNCMER_TABLES_INITIALIZED = {0};
+static CSYNCMER_ATOMIC_INT CSYNCMER_TABLES_INITIALIZED
+#ifdef __cplusplus
+    = {0}
+#else
+    = ATOMIC_VAR_INIT(0)
+#endif
+    ;
 
 static inline void csyncmer_ensure_tables_initialized(void) {
     if (CSYNCMER_ATOMIC_LOAD(CSYNCMER_TABLES_INITIALIZED)) return;
@@ -1214,7 +1230,7 @@ static inline size_t FUNC_NAME(                                                \
                                                                                \
     /* Phase 1: Pack sequence to 2-bit representation */                       \
     size_t packed_size = (length + 3) / 4 + 32;                                \
-    uint8_t* packed = (uint8_t*)aligned_alloc(32, packed_size);                \
+    uint8_t* packed = (uint8_t*)CSYNCMER_ALIGNED_ALLOC(32, packed_size);                \
     if (!packed) return 0;                                                     \
     memset(packed, 0, packed_size);                                            \
     csyncmer_pack_seq_2bit(sequence, length, packed);                          \
@@ -1250,22 +1266,22 @@ static inline size_t FUNC_NAME(                                                \
         }                                                                      \
         for (int i = 0; i < 8; i++) {                                          \
             if (ts_buf_cap_##FUNC_NAME[i] < max_per_lane) {                   \
-                free(ts_pos_bufs_##FUNC_NAME[i]);                              \
-                ts_pos_bufs_##FUNC_NAME[i] = (uint32_t*)aligned_alloc(         \
+                CSYNCMER_ALIGNED_FREE(ts_pos_bufs_##FUNC_NAME[i]);             \
+                ts_pos_bufs_##FUNC_NAME[i] = (uint32_t*)CSYNCMER_ALIGNED_ALLOC( \
                     32, max_per_lane * sizeof(uint32_t));                       \
                 if (!ts_pos_bufs_##FUNC_NAME[i]) {                             \
                     ts_buf_cap_##FUNC_NAME[i] = 0;                             \
-                    free(packed); return 0;                                     \
+                    CSYNCMER_ALIGNED_FREE(packed); return 0;                    \
                 }                                                              \
                 if (CANONICAL) {                                               \
-                    free(ts_str_bufs_##FUNC_NAME[i]);                          \
-                    ts_str_bufs_##FUNC_NAME[i] = (uint8_t*)aligned_alloc(      \
+                    CSYNCMER_ALIGNED_FREE(ts_str_bufs_##FUNC_NAME[i]);         \
+                    ts_str_bufs_##FUNC_NAME[i] = (uint8_t*)CSYNCMER_ALIGNED_ALLOC(\
                         32, max_per_lane);                                     \
                     if (!ts_str_bufs_##FUNC_NAME[i]) {                         \
-                        free(ts_pos_bufs_##FUNC_NAME[i]);                      \
+                        CSYNCMER_ALIGNED_FREE(ts_pos_bufs_##FUNC_NAME[i]);     \
                         ts_pos_bufs_##FUNC_NAME[i] = NULL;                     \
                         ts_buf_cap_##FUNC_NAME[i] = 0;                         \
-                        free(packed); return 0;                                \
+                        CSYNCMER_ALIGNED_FREE(packed); return 0;               \
                     }                                                          \
                 }                                                              \
                 ts_buf_cap_##FUNC_NAME[i] = max_per_lane;                      \
@@ -1310,17 +1326,17 @@ static inline size_t FUNC_NAME(                                                \
     size_t delay_size = 1;                                                     \
     while (delay_size < S) delay_size *= 2;                                    \
     size_t delay_mask = delay_size - 1;                                        \
-    __m256i* delay_buf = (__m256i*)aligned_alloc(32,                           \
+    __m256i* delay_buf = (__m256i*)CSYNCMER_ALIGNED_ALLOC(32,                           \
         delay_size * sizeof(__m256i));                                         \
-    if (!delay_buf) { free(packed); return 0; }                                \
+    if (!delay_buf) { CSYNCMER_ALIGNED_FREE(packed); return 0; }               \
     for (size_t i = 0; i < delay_size; i++)                                    \
         delay_buf[i] = _mm256_setzero_si256();                                \
     size_t wr_idx = 0, rd_idx = 0;                                            \
                                                                                \
     /* Two-stack: [hash upper 16 bits][position lower 16 bits] */              \
-    __m256i *ring_buf = (__m256i *)aligned_alloc(32,                            \
+    __m256i *ring_buf = (__m256i *)CSYNCMER_ALIGNED_ALLOC(32,                            \
         window_size * sizeof(__m256i));                                        \
-    if (!ring_buf) { free(delay_buf); free(packed); return 0; }               \
+    if (!ring_buf) { CSYNCMER_ALIGNED_FREE(delay_buf); CSYNCMER_ALIGNED_FREE(packed); return 0; } \
     for (size_t i = 0; i < window_size; i++)                                   \
         ring_buf[i] = _mm256_set1_epi32((int)UINT32_MAX);                     \
     __m256i prefix_min = _mm256_set1_epi32((int)UINT32_MAX);                   \
@@ -1331,9 +1347,10 @@ static inline size_t FUNC_NAME(                                                \
     uint8_t *strand_ring = NULL;                                               \
     uint8_t prefix_strand = 0;                                                 \
     if (CANONICAL && COLLECT_POSITIONS) {                                       \
-        strand_ring = (uint8_t *)aligned_alloc(32, window_size);              \
-        if (!strand_ring) { free(ring_buf); free(delay_buf);                  \
-                            free(packed); return 0; }                          \
+        strand_ring = (uint8_t *)CSYNCMER_ALIGNED_ALLOC(32, window_size);              \
+        if (!strand_ring) { CSYNCMER_ALIGNED_FREE(ring_buf);                  \
+            CSYNCMER_ALIGNED_FREE(delay_buf); CSYNCMER_ALIGNED_FREE(packed);   \
+            return 0; }                                                        \
         for (size_t i = 0; i < window_size; i++) strand_ring[i] = 0;          \
     }                                                                          \
                                                                                \
@@ -1681,7 +1698,7 @@ static inline size_t FUNC_NAME(                                                \
         if (total > max_positions) {                                           \
             fprintf(stderr, "csyncmer error: output buffer too small"          \
                     " (need %zu, have %zu)\n", total, max_positions);          \
-            free(delay_buf); free(packed);                                     \
+            CSYNCMER_ALIGNED_FREE(delay_buf); CSYNCMER_ALIGNED_FREE(packed);   \
             return 0;                                                          \
         }                                                                      \
         size_t off = 0;                                                        \
@@ -1701,10 +1718,10 @@ static inline size_t FUNC_NAME(                                                \
         syncmer_count = off;                                                   \
     }                                                                          \
                                                                                \
-    free(ring_buf);                                                            \
-    free(strand_ring);                                                         \
-    free(delay_buf);                                                           \
-    free(packed);                                                              \
+    CSYNCMER_ALIGNED_FREE(ring_buf);                                           \
+    CSYNCMER_ALIGNED_FREE(strand_ring);                                        \
+    CSYNCMER_ALIGNED_FREE(delay_buf);                                          \
+    CSYNCMER_ALIGNED_FREE(packed);                                             \
     return syncmer_count;                                                      \
 }
 
@@ -1777,6 +1794,57 @@ static inline size_t csyncmer_twostack_simd_32_canonical_positions(
 // The TG-count trick doesn't apply to canonical syncmer hash computation.
 
 #endif  // __AVX2__
+
+// ============================================================================
+// Portable API: fallback to RESCAN when AVX2 is not available
+// ============================================================================
+#ifndef __AVX2__
+
+static inline size_t csyncmer_twostack_simd_32_count(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S
+) {
+    return csyncmer_rescan_32_count(sequence, length, K, S, NULL);
+}
+
+static inline size_t csyncmer_twostack_simd_32_positions(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S,
+    uint32_t* out_positions,
+    size_t max_positions
+) {
+    return csyncmer_rescan_32_positions(sequence, length, K, S,
+                                        out_positions, max_positions);
+}
+
+static inline size_t csyncmer_twostack_simd_32_canonical_count(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S
+) {
+    return csyncmer_canonical_rescan_32_count(sequence, length, K, S);
+}
+
+static inline size_t csyncmer_twostack_simd_32_canonical_positions(
+    const char* sequence,
+    size_t length,
+    size_t K,
+    size_t S,
+    uint32_t* out_positions,
+    uint8_t* out_strands,
+    size_t max_positions
+) {
+    return csyncmer_canonical_rescan_32_positions(sequence, length, K, S,
+                                                   out_positions, out_strands,
+                                                   max_positions);
+}
+
+#endif  // !__AVX2__
 
 #ifdef __cplusplus
 }

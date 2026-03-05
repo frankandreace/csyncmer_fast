@@ -7,7 +7,7 @@
 
 ![Linux](https://img.shields.io/badge/Linux-supported-brightgreen) ![macOS](https://img.shields.io/badge/macOS-supported-brightgreen) ![Windows](https://img.shields.io/badge/Windows-supported-brightgreen)
 
-Header-only pure C library for fast closed syncmer extraction from DNA sequences using ntHash rolling hashes. Processes human chr19 (59 MB) at up to **1.5 GB/s** with AVX2 SIMD acceleration, and remains fully functional on all platforms via automatic scalar fallback.
+Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses ntHash rolling hashes with two algorithms: **twostack** (AVX2 SIMD batch processing) and **rescan** (portable scalar iterator). Remains fully functional on all platforms via automatic scalar fallback.
 
 ### Quick Start
 
@@ -18,21 +18,19 @@ const char* seq = "ACGTACGTACGT...";
 size_t len = strlen(seq);
 size_t K = 31, S = 15;
 
-// Batch API — forward-only (single strand)
-// ~1400 MB/s with AVX2 SIMD, ~400 MB/s scalar fallback, ~99.99996% accurate
+// twostack: fastest, AVX2, ~99.99996% accurate
 size_t count = csyncmer_twostack_simd_32_count(seq, len, K, S);
 
-uint32_t positions[10000];
-size_t n = csyncmer_twostack_simd_32_positions(
-    seq, len, K, S, positions, 10000);
+// Canonical twostack: strand-independent, AVX2
+size_t canon_count = csyncmer_twostack_simd_32_canonical_count(seq, len, K, S);
 
-// Batch API — canonical (strand-independent)
+// Canonical with positions and strands, AVX2
+uint32_t positions[10000];
 uint8_t strands[10000];  // 0=forward, 1=RC had minimal s-mer
-size_t cn = csyncmer_twostack_simd_32_canonical_positions(
+size_t n = csyncmer_twostack_simd_32_canonical_positions(
     seq, len, K, S, positions, strands, 10000);
 
-// Streaming API — forward-only
-// Scalar, portable, exact 64-bit hashes (~400 MB/s)
+// Iterator: scalar, portable, exact results
 CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
 size_t pos;
 while (csyncmer_iterator_next_64(iter, &pos)) {
@@ -40,7 +38,7 @@ while (csyncmer_iterator_next_64(iter, &pos)) {
 }
 csyncmer_iterator_destroy_64(iter);
 
-// Streaming API — canonical (strand-independent)
+// Canonical iterator: strand-independent, scalar
 CsyncmerIteratorCanonical64* citer = csyncmer_iterator_create_canonical_64(seq, len, K, S);
 int strand;
 while (csyncmer_iterator_next_canonical_64(citer, &pos, &strand)) {
@@ -51,43 +49,32 @@ csyncmer_iterator_destroy_canonical_64(citer);
 
 Compile and run the example:
 ```bash
-cc -std=c11 -O3 -march=native -o example example.c
+gcc -std=c11 -o example -march=native example.c
 ./example
 ```
 
-### Performance
+### API
 
-Measured on human chr19 (59 MB), best-of-5, Intel Core Ultra 5 135H (4.6 GHz).
+**Forward-only (single strand):**
 
-**K=31, S=15:**
+| Function | Output | Speed | Notes |
+|----------|--------|-------|-------|
+| `csyncmer_twostack_simd_32_count` | Count | ~1390-1460 MB/s | AVX2, fastest |
+| `csyncmer_twostack_simd_32_positions` | Positions | ~780-910 MB/s | AVX2 |
+| `csyncmer_iterator_*_64` | Positions | ~380-430 MB/s | Scalar, portable, exact |
 
-| Variant | AVX2 SIMD (`-march=native`) | Scalar (portable) |
-|---|---|---|
-| **Forward-only** | | |
-| Count | **1390 MB/s** | 400 MB/s |
-| Positions | **790 MB/s** | 400 MB/s |
-| **Canonical** | | |
-| Count | **1290 MB/s** | 330 MB/s |
-| Positions | **500 MB/s** | 330 MB/s |
-| **Streaming iterator (64-bit)** | | |
-| Forward positions | — | 430 MB/s |
-| Canonical positions | — | 330 MB/s |
+**Canonical (strand-independent):**
 
-**K=21, S=11:**
+| Function | Output | Speed | Notes |
+|----------|--------|-------|-------|
+| `csyncmer_twostack_simd_32_canonical_count` | Count | ~1290 MB/s | AVX2 |
+| `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~450-480 MB/s | AVX2 |
+| `csyncmer_iterator_*_canonical_64` | Positions + strands | ~285-330 MB/s | Scalar, portable, exact |
 
-| Variant | AVX2 SIMD (`-march=native`) | Scalar (portable) |
-|---|---|---|
-| **Forward-only** | | |
-| Count | **1460 MB/s** | 400 MB/s |
-| Positions | **910 MB/s** | 400 MB/s |
-| **Canonical** | | |
-| Count | **1290 MB/s** | 370 MB/s |
-| Positions | **460 MB/s** | 285 MB/s |
-| **Streaming iterator (64-bit)** | | |
-| Forward positions | — | 380 MB/s |
-| Canonical positions | — | 285 MB/s |
+All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
+Speeds measured on chr19 (59 MB), best-of-5, Intel Core Ultra 5 135H (4.6 GHz).
 
-The batch API (`csyncmer_twostack_simd_32_*`) is the recommended entry point. On x86 with AVX2 (`-march=native`), it uses SIMD-accelerated twostack processing (8 parallel chunks, 16-bit hash packing, ~99.99996% accurate). Without AVX2, it automatically falls back to scalar rescan with exact 32-bit hashes. The streaming iterator provides exact 64-bit hashes and processes one syncmer at a time.
+The batch API (`csyncmer_twostack_simd_32_*`) is the recommended entry point. On x86 with AVX2 (`-march=native`), it uses SIMD-accelerated twostack processing (8 parallel chunks, 16-bit hash packing). Without AVX2, it automatically falls back to scalar rescan with exact 32-bit hashes. The streaming iterator provides exact 64-bit hashes and processes one syncmer at a time.
 
 Performance is within 10-15% of [simd-minimizers](https://github.com/rust-seq/simd-minimizers) (Rust SIMD), faster for non-canonical and slightly slower for canonical due to `min(fw, rc)` strand tracking overhead vs simd-minimizers' `fw XOR rc`.
 

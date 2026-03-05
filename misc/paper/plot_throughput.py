@@ -65,28 +65,29 @@ def read_syng(path):
 
 
 def plot(data, syng_data, outbase):
+    FS = 8  # base font size — tune this single value to scale all text
     plt.rcParams.update({
-        "font.size": 20,
-        "axes.labelsize": 20,
-        "axes.titlesize": 21,
-        "xtick.labelsize": 18,
-        "ytick.labelsize": 18,
-        "legend.fontsize": 16,
+        "font.size": FS,
+        "axes.labelsize": FS,
+        "axes.titlesize": FS + 1,
+        "xtick.labelsize": FS - 0.5,
+        "ytick.labelsize": FS - 0.5,
+        "legend.fontsize": FS - 1,
     })
 
     visible = [(m, c, a) for (m, c, a) in zip(METHODS, COLORS, ALPHAS) if m[0] not in HIDE]
     n_visible = len(visible)
-    bar_width = 0.22
+    bar_width = 0.36
     group_width = n_visible * bar_width
-    group_gap = group_width * 0.35  # space between dataset groups
+    group_gap = group_width * 0.45  # space between dataset groups
 
     has_syng = bool(syng_data)
     ncols = 2 if has_syng else 1
-    fig, axes = plt.subplots(1, ncols, figsize=(10.0 if has_syng else 6.5, 3.8),
-                             gridspec_kw={"width_ratios": [1.8, 0.7]} if has_syng else None)
+    fig, axes = plt.subplots(1, ncols, figsize=(4.5 if has_syng else 3.3, 1.8),
+                             gridspec_kw={"width_ratios": [1.8, 0.65]} if has_syng else None)
     if ncols == 1:
         axes = [axes]
-    fig.subplots_adjust(wspace=0.15)
+    fig.subplots_adjust(wspace=0.25)
 
     ax_tp = axes[0]  # throughput axis (panels a + b combined)
 
@@ -109,21 +110,20 @@ def plot(data, syng_data, outbase):
             if v is None:
                 continue
             x = group_center + i * bar_width - (n_visible - 1) * bar_width / 2
-            ax_tp.bar(x, v, width=bar_width * 0.88, color=color, alpha=alpha,
+            ax_tp.bar(x, v, width=bar_width * 0.95, color=color, alpha=alpha,
                       edgecolor="black", linewidth=0.3, label=m_label if g == 0 else None)
             ax_tp.text(x, v + max_y * 0.01, f"{v:.2f}", ha="center",
-                       va="bottom", fontsize=15)
+                       va="bottom", fontsize=FS - 2)
 
     ax_tp.set_xticks(group_centers)
-    ax_tp.set_xticklabels([dl for _, dl in DATASETS], fontsize=18)
+    ax_tp.set_xticklabels([dl for _, dl in DATASETS], fontsize=FS - 0.5)
     ax_tp.tick_params(axis="x", length=0, pad=3)
     ax_tp.spines["top"].set_visible(False)
     ax_tp.spines["right"].set_visible(False)
     ax_tp.tick_params(axis="y", length=2, pad=1)
-    ax_tp.set_ylabel("Throughput (GB/s)", fontsize=20, labelpad=1)
+    ax_tp.set_ylabel("Throughput (GB/s)", fontsize=FS, labelpad=4)
     if max_y > 0:
         ax_tp.set_ylim(0, max_y)
-
     # ── Panel (c): syng execution time ──
     if has_syng:
         ax_syng = axes[1]
@@ -139,18 +139,19 @@ def plot(data, syng_data, outbase):
             if v is None:
                 continue
             x = i * bar_width - (n_syng - 1) * bar_width / 2
-            ax_syng.bar(x, v, width=bar_width * 0.88, color=color, alpha=alpha,
+            ax_syng.bar(x, v, width=bar_width * 0.95, color=color, alpha=alpha,
                         edgecolor="black", linewidth=0.3, label=m_label)
             ax_syng.text(x, v + max_t * 0.01, f"{v:.1f}s", ha="center",
-                         va="bottom", fontsize=15)
+                         va="bottom", fontsize=FS - 2)
 
         ax_syng.set_xticks([])
-        ax_syng.set_xlabel("(c) syng (8 threads)", fontsize=18, labelpad=2)
+        ax_syng.set_xlabel("(c) syng (8 threads)", fontsize=FS - 0.5, labelpad=2)
         ax_syng.spines["top"].set_visible(False)
         ax_syng.spines["left"].set_visible(False)
         ax_syng.yaxis.tick_right()
         ax_syng.yaxis.set_label_position("right")
-        ax_syng.set_ylabel("Time (s)", fontsize=20, labelpad=1)
+        ax_syng.set_ylabel("Time (s)", fontsize=FS, labelpad=6)
+        ax_syng.spines["right"].set_position(("outward", 5))
         ax_syng.tick_params(axis="y", length=2, pad=1)
         ax_syng.set_ylim(0, max_t)
 
@@ -162,15 +163,15 @@ def plot(data, syng_data, outbase):
                 seen[l] = h
     handles = list(seen.values())
     labels = list(seen.keys())
-    fig.legend(handles, labels, loc="upper center", ncol=len(labels),
-               frameon=False, fontsize=16, bbox_to_anchor=(0.5, 1.02),
+    fig.legend(handles, labels, loc="upper center", ncol=3,
+               frameon=False, fontsize=FS - 1, bbox_to_anchor=(0.5, 1.09),
                handlelength=1.0, handletextpad=0.3, columnspacing=0.8)
 
     # Save PDF + PNG
     pdf_path = outbase if outbase.endswith(".pdf") else outbase + ".pdf"
     png_path = pdf_path.replace(".pdf", ".png")
-    fig.savefig(pdf_path, bbox_inches="tight", pad_inches=0.02)
-    fig.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
+    fig.savefig(pdf_path, bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.12)
     print(f"Saved {pdf_path} and {png_path}", file=sys.stderr)
     plt.close(fig)
 

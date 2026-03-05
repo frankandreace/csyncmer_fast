@@ -7,7 +7,7 @@
 
 ![Linux](https://img.shields.io/badge/Linux-supported-brightgreen) ![macOS](https://img.shields.io/badge/macOS-supported-brightgreen) ![Windows](https://img.shields.io/badge/Windows-supported-brightgreen)
 
-Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses ntHash rolling hashes with two algorithms: **twostack** (AVX2 SIMD batch processing) and **rescan** (portable scalar iterator). Remains fully functional on all platforms via automatic scalar fallback.
+Header-only pure C library for fast closed syncmer extraction from DNA sequences. Uses ntHash rolling hashes with two algorithms: **twostack** (AVX2 SIMD batch processing) and **rescan** (portable scalar iterator).
 
 ### Quick Start
 
@@ -18,19 +18,20 @@ const char* seq = "ACGTACGTACGT...";
 size_t len = strlen(seq);
 size_t K = 31, S = 15;
 
-// twostack: fastest, AVX2, ~99.99996% accurate
+// AVX2 SIMD batch API (~1400 MB/s, 16-bit hash approximation)
+#ifdef __AVX2__
 size_t count = csyncmer_twostack_simd_32_count(seq, len, K, S);
 
-// Canonical twostack: strand-independent, AVX2
-size_t canon_count = csyncmer_twostack_simd_32_canonical_count(seq, len, K, S);
-
-// Canonical with positions and strands, AVX2
 uint32_t positions[10000];
 uint8_t strands[10000];  // 0=forward, 1=RC had minimal s-mer
 size_t n = csyncmer_twostack_simd_32_canonical_positions(
     seq, len, K, S, positions, strands, 10000);
+#else
+// Scalar rescan (~400 MB/s, exact 32-bit hashes)
+size_t count = csyncmer_rescan_32_count(seq, len, K, S, NULL);
+#endif
 
-// Iterator: scalar, portable, exact results
+// Streaming iterator: scalar, portable, exact 64-bit hashes (~400 MB/s)
 CsyncmerIterator64* iter = csyncmer_iterator_create_64(seq, len, K, S);
 size_t pos;
 while (csyncmer_iterator_next_64(iter, &pos)) {
@@ -74,7 +75,7 @@ gcc -std=c11 -o example -march=native example.c
 All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
 Speeds measured on chr19 (59 MB), best-of-5, Intel Core Ultra 5 135H (4.6 GHz).
 
-The batch API (`csyncmer_twostack_simd_32_*`) is the recommended entry point. On x86 with AVX2 (`-march=native`), it uses SIMD-accelerated twostack processing (8 parallel chunks, 16-bit hash packing). Without AVX2, it automatically falls back to scalar rescan with exact 32-bit hashes. The streaming iterator provides exact 64-bit hashes and processes one syncmer at a time.
+The batch API (`csyncmer_twostack_simd_32_*`) requires AVX2 (`-march=native` or `-mavx2`). On platforms without AVX2, use the scalar `csyncmer_rescan_32_*` functions or the streaming iterator. The streaming iterator provides exact 64-bit hashes and processes one syncmer at a time.
 
 Performance is within 10-15% of [simd-minimizers](https://github.com/rust-seq/simd-minimizers) (Rust SIMD), faster for non-canonical and slightly slower for canonical due to `min(fw, rc)` strand tracking overhead vs simd-minimizers' `fw XOR rc`.
 
@@ -124,9 +125,9 @@ A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains i
 
 The library is organized around two APIs backed by three internal algorithms:
 
-**Batch API** (`csyncmer_twostack_simd_32_*`) — pass the full sequence, get all syncmer positions at once. Internally selects the best available algorithm:
-- **twostack** (AVX2 SIMD): splits the sequence into 8 chunks processed in parallel using the two-stack sliding minimum algorithm ([Groot Koerkamp & Martayan, SEA 2025](https://curiouscoding.nl/posts/fast-minimizers/)). Packs hash (upper 16 bits) + position (lower 16 bits) into 32-bit values for SIMD comparison. ~99.99996% accurate (~4 errors per 10M syncmers).
-- **rescan** (scalar fallback): O(1) amortized — maintains a circular buffer and only rescans the window when the current minimum falls out (~6% of iterations). Branch-free minimum update using conditional moves. Exact 32-bit hashes.
+**Twostack batch API** (`csyncmer_twostack_simd_32_*`, requires AVX2) — pass the full sequence, get all syncmer positions at once. Splits the sequence into 8 chunks processed in parallel using the two-stack sliding minimum algorithm ([Groot Koerkamp & Martayan, SEA 2025](https://curiouscoding.nl/posts/fast-minimizers/)). Packs hash (upper 16 bits) + position (lower 16 bits) into 32-bit values for SIMD comparison. ~99.99996% accurate (~4 errors per 10M syncmers).
+
+**Rescan batch API** (`csyncmer_rescan_32_*`, portable) — O(1) amortized scalar algorithm. Maintains a circular buffer and only rescans the window when the current minimum falls out (~6% of iterations). Branch-free minimum update using conditional moves. Exact 32-bit hashes.
 
 **Streaming API** (`csyncmer_iterator_*_64`) — create/next/destroy pattern, one syncmer at a time. Uses exact 64-bit ntHash with no approximation. Suitable for streaming pipelines where the full sequence is not available upfront or memory is constrained.
 
@@ -195,4 +196,4 @@ docker-compose run python-build
 - [x] Cross-platform compilation (Linux, macOS, Windows)
 - [ ] ARM NEON SIMD acceleration
 
-**Note on ARM NEON**: NEON registers are 128-bit (4×u32), half the width of AVX2 (256-bit, 8×u32). Emulating 8 lanes with 2×uint32x4_t doubles every SIMD instruction. While Apple M-series out-of-order execution partially hides this overhead for count-only variants, position collection suffers from the lack of native 256-bit operations (movemask, gather, permute). In our experiments, an 8-lane NEON twostack implementation achieved ~460 MB/s for count (vs ~500 MB/s scalar rescan) and ~270 MB/s for positions (vs ~460 MB/s rescan) — the SIMD overhead exceeds the algorithmic benefit. The scalar rescan fallback already performs well on ARM (~400-500 MB/s), making a dedicated NEON path low priority until wider SIMD extensions (SVE/SVE2) become widespread.
+**Note on ARM NEON**: NEON registers are 128-bit (4×u32), half the width of AVX2 (256-bit, 8×u32). Emulating 8 lanes with 2×uint32x4_t doubles every SIMD instruction. While Apple M-series out-of-order execution partially hides this overhead for count-only variants, position collection suffers from the lack of native 256-bit operations (movemask, gather, permute). In our experiments, an 8-lane NEON twostack implementation achieved ~460 MB/s for count (vs ~500 MB/s scalar rescan) and ~270 MB/s for positions (vs ~460 MB/s rescan) — the SIMD overhead exceeds the algorithmic benefit. The scalar rescan already performs well on ARM (~400-500 MB/s), making a dedicated NEON path low priority until wider SIMD extensions (SVE/SVE2) become widespread.

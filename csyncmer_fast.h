@@ -1796,52 +1796,44 @@ static inline size_t csyncmer_twostack_simd_32_canonical_positions(
 #endif  // __AVX2__
 
 // ============================================================================
-// Portable API: fallback to RESCAN when AVX2 is not available
+// Non-AVX2 stubs: compile but abort with a clear error message
 // ============================================================================
 #ifndef __AVX2__
 
 static inline size_t csyncmer_twostack_simd_32_count(
-    const char* sequence,
-    size_t length,
-    size_t K,
-    size_t S
+    const char* sequence, size_t length, size_t K, size_t S
 ) {
-    return csyncmer_rescan_32_count(sequence, length, K, S, NULL);
+    (void)sequence; (void)length; (void)K; (void)S;
+    fprintf(stderr, "csyncmer_twostack_simd_32_count requires AVX2 (-march=native or -mavx2)\n");
+    exit(1);
 }
 
 static inline size_t csyncmer_twostack_simd_32_positions(
-    const char* sequence,
-    size_t length,
-    size_t K,
-    size_t S,
-    uint32_t* out_positions,
-    size_t max_positions
+    const char* sequence, size_t length, size_t K, size_t S,
+    uint32_t* out_positions, size_t max_positions
 ) {
-    return csyncmer_rescan_32_positions(sequence, length, K, S,
-                                        out_positions, max_positions);
+    (void)sequence; (void)length; (void)K; (void)S;
+    (void)out_positions; (void)max_positions;
+    fprintf(stderr, "csyncmer_twostack_simd_32_positions requires AVX2 (-march=native or -mavx2)\n");
+    exit(1);
 }
 
 static inline size_t csyncmer_twostack_simd_32_canonical_count(
-    const char* sequence,
-    size_t length,
-    size_t K,
-    size_t S
+    const char* sequence, size_t length, size_t K, size_t S
 ) {
-    return csyncmer_canonical_rescan_32_count(sequence, length, K, S);
+    (void)sequence; (void)length; (void)K; (void)S;
+    fprintf(stderr, "csyncmer_twostack_simd_32_canonical_count requires AVX2 (-march=native or -mavx2)\n");
+    exit(1);
 }
 
 static inline size_t csyncmer_twostack_simd_32_canonical_positions(
-    const char* sequence,
-    size_t length,
-    size_t K,
-    size_t S,
-    uint32_t* out_positions,
-    uint8_t* out_strands,
-    size_t max_positions
+    const char* sequence, size_t length, size_t K, size_t S,
+    uint32_t* out_positions, uint8_t* out_strands, size_t max_positions
 ) {
-    return csyncmer_canonical_rescan_32_positions(sequence, length, K, S,
-                                                   out_positions, out_strands,
-                                                   max_positions);
+    (void)sequence; (void)length; (void)K; (void)S;
+    (void)out_positions; (void)out_strands; (void)max_positions;
+    fprintf(stderr, "csyncmer_twostack_simd_32_canonical_positions requires AVX2 (-march=native or -mavx2)\n");
+    exit(1);
 }
 
 #endif  // !__AVX2__

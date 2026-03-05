@@ -34,3 +34,36 @@ jobs:
 
     - name: Run unit tests
       run: cd misc/tests && ./test
+
+  bench:
+    runs-on: ubuntu-latest
+
+    container:
+      image: ghcr.io/${{ github.repository }}/build-env:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build benchmark
+      run: cd misc/tests && make
+
+    - name: Run quick benchmark
+      run: |
+        cd misc/tests
+        echo '## Performance (test_100kbp.fasta, best-of-3)' >> $GITHUB_STEP_SUMMARY
+        echo '' >> $GITHUB_STEP_SUMMARY
+        for params in "31 15" "21 11"; do
+          K=$(echo $params | cut -d' ' -f1)
+          S=$(echo $params | cut -d' ' -f2)
+          echo "### K=$K S=$S" >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '| Implementation | Syncmers | Speed (MB/s) |' >> $GITHUB_STEP_SUMMARY
+          echo '|---|---|---|' >> $GITHUB_STEP_SUMMARY
+          ./benchmark --quick test_100kbp.fasta $K $S \
+            | awk 'NR>3 && !/^---/ {printf "| %s | %s | %s |\n", $1, $2, $3}' \
+            >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+        done

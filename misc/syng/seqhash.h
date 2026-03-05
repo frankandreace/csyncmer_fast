@@ -10,6 +10,9 @@
  *-------------------------------------------------------------------
  */
 
+#ifndef SEQHASH_D_H
+#define SEQHASH_D_H
+
 #include "utils_d.h"
 
 typedef struct {
@@ -50,10 +53,12 @@ static void seqhashIteratorDestroyD (SeqhashIteratorD *si)
 // (closed) syncmer extracts w-mers that end with a minimal kmer
 // these provide a cover, and have good distribution properties
 SeqhashIteratorD *syncmerIteratorD (SeqhashD *sh, char *s, int len) ;
-bool syncmerNextD (SeqhashIteratorD *si, U64 *kmer, size_t *pos, bool *isF) ;
+void syncmerIteratorReinitD (SeqhashIteratorD *si, char *s, int len) ;
+bool syncmerNextD (SeqhashIteratorD *si, U64 *kmer, int *pos, bool *isF) ;
 
 // utilities
 static inline U64 kHashD (SeqhashD *sh, U64 k) { return ((k * sh->factor1) >> sh->shift1) ; }
 
 
 /******* end of file ********/
+#endif /* SEQHASH_D_H */

@@ -18,6 +18,8 @@
 
 #include "csyncmer_fastq.h"
 #include "csyncmer_fastq_split.h"
+/* Durbin's seqhash syncmer iterator (with reinit) */
+#include "../syng/seqhash.h"
 
 #define N_BUCKETS    256  /* enough for fine-grained bucket_shift values */
 
@@ -28,7 +30,7 @@ static double now(void) {
 }
 
 int main(int argc, char **argv) {
-    int k = 31, w = 1022, single_mode = 0, twopass_mode = 0, hashonly_mode = 0, packonly_mode = 0, twopass_nostrand_mode = 0, bucket_shift = 11;
+    int k = 31, w = 1022, single_mode = 0, twopass_mode = 0, hashonly_mode = 0, packonly_mode = 0, twopass_nostrand_mode = 0, rescan_mode = 0, seqhash_mode = 0, bucket_shift = 11;
     char *filename = NULL;
 
     for (int i = 1; i < argc; i++) {
@@ -40,12 +42,16 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-hashonly")) hashonly_mode = 1;
         else if (!strcmp(argv[i], "-packonly")) packonly_mode = 1;
         else if (!strcmp(argv[i], "-twopass-nostrand")) twopass_nostrand_mode = 1;
+        else if (!strcmp(argv[i], "-rescan")) rescan_mode = 1;
+        else if (!strcmp(argv[i], "-seqhash")) seqhash_mode = 1;
         else filename = argv[i];
     }
     if (!filename) {
         fprintf(stderr, "Usage: %s [-k 31] [-w 1022] [-single] [-twopass] [-hashonly] [-b bucket_shift] input.fastq\n", argv[0]);
         fprintf(stderr, "  -single    Use single-sequence API instead of multi (8-lane SIMD)\n");
         fprintf(stderr, "  -twopass   Use two-pass multi-8 (separate hash + twostack passes)\n");
+        fprintf(stderr, "  -rescan    Use scalar rescan per read (csyncmer_rescan_32_positions)\n");
+        fprintf(stderr, "  -seqhash   Use Durbin's seqhash syncmer iterator per read\n");
         fprintf(stderr, "  -hashonly  Benchmark hash pass only (no twostack)\n");
         fprintf(stderr, "  -b N       Bucket shift for length grouping (default 11 = 2048bp)\n");
         fprintf(stderr, "  default: multi-8 with length bucketing (same as syng)\n");
@@ -54,7 +60,9 @@ int main(int argc, char **argv) {
 
     int K = w + k - 1;
     int S = k;
-    const char *mode_str = single_mode ? "single" :
+    const char *mode_str = seqhash_mode ? "seqhash" :
+                           rescan_mode ? "rescan" :
+                           single_mode ? "single" :
                            packonly_mode ? "multi-8-packonly" :
                            hashonly_mode ? "multi-8-hashonly" :
                            twopass_nostrand_mode ? "multi-8-twopass-nostrand" :
@@ -118,8 +126,48 @@ int main(int argc, char **argv) {
     size_t total_syncmers = 0;
     double elapsed;
 
-    if (single_mode) {
-        /* Single-sequence API: one read at a time */
+    if (seqhash_mode) {
+        /* Durbin's seqhash syncmer iterator per read, with reinit (same as syng) */
+        int window_size = K - S + 1;
+        fprintf(stderr, "Running syncmer detection (seqhash, w=%d)...\n", window_size);
+        double t0 = now();
+
+        SeqhashD *sh = seqhashCreateD(S, window_size, 7);
+        SeqhashIteratorD *si = NULL;
+        for (size_t i = 0; i < nseqs; i++) {
+            if (lens[i] < (size_t)K) continue;
+            U64 kmer;
+            int pos;
+            bool isF;
+            if (!si) si = syncmerIteratorD(sh, seqs[i], (int)lens[i]);
+            else syncmerIteratorReinitD(si, seqs[i], (int)lens[i]);
+            while (syncmerNextD(si, &kmer, &pos, &isF))
+                total_syncmers++;
+        }
+        if (si) seqhashIteratorDestroyD(si);
+        seqhashDestroyD(sh);
+
+        elapsed = now() - t0;
+    } else if (rescan_mode) {
+        /* Canonical scalar rescan per read */
+        uint32_t *pos_buf = malloc(max_per_read * sizeof(uint32_t));
+        uint8_t *strand_buf = malloc(max_per_read * sizeof(uint8_t));
+
+        fprintf(stderr, "Running syncmer detection (canonical rescan)...\n");
+        double t0 = now();
+
+        for (size_t i = 0; i < nseqs; i++) {
+            size_t count = csyncmer_canonical_rescan_32_positions(
+                seqs[i], lens[i], (size_t)K, (size_t)S,
+                pos_buf, strand_buf, max_per_read);
+            total_syncmers += count;
+        }
+
+        elapsed = now() - t0;
+        free(pos_buf);
+        free(strand_buf);
+    } else if (single_mode) {
+        /* Single-sequence API: one read at a time (twostack SIMD) */
         uint32_t *pos_buf = malloc(max_per_read * sizeof(uint32_t));
         uint8_t *strand_buf = malloc(max_per_read * sizeof(uint8_t));
 

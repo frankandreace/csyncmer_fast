@@ -1,0 +1,30 @@
+% Feature comparison: csyncmer_fast vs simd-minimizers
+% Requires: booktabs, array packages
+\begin{table}[t]
+\centering
+\caption{Feature comparison between \textsc{csyncmer\_fast} and \textsc{simd-minimizers}.}
+\label{tab:features}
+\small
+\begin{tabular}{@{}l l l@{}}
+\toprule
+\textbf{Feature} & \textbf{csyncmer\_fast} & \textbf{simd-minimizers} \\
+\midrule
+Language           & C (header-only)         & Rust (crate) \\
+SIMD ISA           & AVX2                    & AVX2 + NEON \\
+Hash function      & ntHash (32-bit)         & ntHash (32-bit) \\
+Canonical hash     & $\min(\text{fw}, \text{rc})$ & $\text{fw} \oplus \text{rc}$ \\
+Strand selection   & implicit in $\min$      & TG-majority vote \\
+Sliding minimum    & two-stack               & two-stack \\
+SIMD packing       & hash$_{[31:16]}$\,\textbar\,pos$_{[15:0]}$ & hash$_{[31:16]}$\,\textbar\,pos$_{[15:0]}$ \\
+Canonical min      & leftmost only           & leftmost + rightmost \\
+Position collect   & batch+transpose / scatter & batch+transpose \\
+Sketch types       & closed syncmers         & minimizers, closed/open syncmers \\
+Super-$k$-mers     & ---                     & \checkmark \\
+Multi-read SIMD    & \checkmark{} (8 reads/batch) & --- \\
+Two-pass pipeline  & \checkmark{} (hash $\to$ twostack) & --- (fused) \\
+FASTQ-native mode  & \checkmark              & --- \\
+$N$/ambiguity skip & ---                     & \checkmark \\
+Window size limit  & $w \le 2^{15}$          & $w < 2^{15}$ \\
+\bottomrule
+\end{tabular}
+\end{table}

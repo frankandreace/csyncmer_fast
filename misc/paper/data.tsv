@@ -1,0 +1,11 @@
+dataset	method	throughput_gbps
+chm13	digest	0.0806
+chm13	rescan	0.3540
+chm13	twostack	0.4860
+chm13	simd-minimizers	0.5604
+chm13	multi-8	0.6230
+hifi	digest	0.0915
+hifi	rescan	0.48
+hifi	twostack	0.65
+hifi	simd-minimizers	0.42
+hifi	multi-8	1.81

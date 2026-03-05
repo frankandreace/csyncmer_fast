@@ -9,6 +9,8 @@
 #include <array>
 
 #include "../../csyncmer_fast.h"
+#include "../fastq/csyncmer_fastq.h"
+#include "../fastq/csyncmer_fastq_split.h"
 #include "../code/syncmer_seqhash.hpp"
 #include "../code/syncmer_nthash32.hpp"
 #include "../code/syncmer_nthash128.hpp"
@@ -512,22 +514,70 @@ static void quick_print(const char* name, size_t count, double best_elapsed, dou
 
 int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
 
+    // Read all chromosomes individually for multi-8 benchmark,
+    // and also concatenate for single-sequence benchmarks.
     FILE *seqFile = fopen(fasta_filename, "r");
     if (!seqFile) { fprintf(stderr, "Error: Cannot open file\n"); return 1; }
     stream *seqStream = stream_open_fasta(seqFile);
-    char *sequence = read_sequence(seqStream);
-    size_t length = strlen(sequence);
+
+    std::vector<char*> chroms;
+    std::vector<size_t> chrom_lens;
+    size_t total_bp = 0;
+    char *seq;
+    while ((seq = read_sequence(seqStream)) != NULL && strlen(seq) > 0) {
+        size_t len = strlen(seq);
+        chroms.push_back(seq);
+        chrom_lens.push_back(len);
+        total_bp += len;
+    }
+    free(seq);
     stream_close(seqStream);
     fclose(seqFile);
 
+    // Build concatenated sequence for single-sequence benchmarks
+    char *sequence = (char*)malloc(total_bp + 1);
+    size_t offset = 0;
+    for (size_t i = 0; i < chroms.size(); i++) {
+        memcpy(sequence + offset, chroms[i], chrom_lens[i]);
+        offset += chrom_lens[i];
+    }
+    sequence[total_bp] = '\0';
+    size_t length = total_bp;
+
     double seq_mb = length / 1e6;
+
+    fprintf(stderr, "%zu chromosomes, %.1f MB total\n", chroms.size(), seq_mb);
 
     bool run_32 = (strcmp(filter, "32") == 0 || strcmp(filter, "all") == 0);
     bool run_64 = (strcmp(filter, "64") == 0 || strcmp(filter, "all") == 0);
+    bool run_seqhash = (strcmp(filter, "seqhash") == 0 || strcmp(filter, "all") == 0);
+    bool run_multi8 = (strcmp(filter, "multi8") == 0 || strcmp(filter, "all") == 0);
 
     printf("Sequence: %.1f MB, K=%d, S=%d (best of %d runs)\n\n", seq_mb, K, S, QUICK_BENCH_RUNS);
     printf("%-25s %10s %12s\n", "Implementation", "Syncmers", "Speed (MB/s)");
     printf("%-25s %10s %12s\n", "-------------------------", "----------", "------------");
+
+    if (run_seqhash) {
+        // Syng original (Durbin's reference seqhash implementation)
+        // Run per-chromosome because Durbin's API uses int len (overflows >2GB)
+        {
+            double best = 1e9;
+            size_t num = 0;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                size_t run_count = 0;
+                clock_t start = clock();
+                for (size_t i = 0; i < chroms.size(); i++) {
+                    size_t c = 0;
+                    compute_closed_syncmers_syng_original(chroms[i], chrom_lens[i], K, S, &c);
+                    run_count += c;
+                }
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+                num = run_count;
+            }
+            quick_print("SEQHASH_SYNG_ORIG", num, best, seq_mb);
+        }
+    }
 
     if (run_64) {
         // Iterator benchmark (scalar, portable, exact)
@@ -582,6 +632,25 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
                 if (elapsed < best) best = elapsed;
             }
             quick_print("NTH32_FUSED_RESCAN", num, best, seq_mb);
+        }
+        // Canonical rescan (csyncmer_fast.h API, strand-aware)
+        {
+            uint32_t *positions = (uint32_t*)aligned_alloc(32, length * sizeof(uint32_t));
+            uint8_t *strands = (uint8_t*)aligned_alloc(32, length);
+            if (positions && strands) {
+                double best = 1e9;
+                size_t num = 0;
+                for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                    clock_t start = clock();
+                    num = csyncmer_canonical_rescan_32_positions(
+                        sequence, length, K, S, positions, strands, length);
+                    double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                    if (elapsed < best) best = elapsed;
+                }
+                quick_print("NTH32_CANON_RESCAN_POS", num, best, seq_mb);
+            }
+            free(positions);
+            free(strands);
         }
         {
             size_t num;
@@ -665,9 +734,68 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
             free(strands);
         }
 #endif
+
+    } // end run_32
+
+    if (run_multi8) {
+        // Multi-8 canonical twostack (split hash+twostack, batching chromosomes)
+        if (chroms.size() >= 1) {
+            size_t max_chrom = *std::max_element(chrom_lens.begin(), chrom_lens.end());
+            size_t work_size = csyncmer_split_work_buf_size(max_chrom, K, S);
+            uint8_t *work_buf = (uint8_t*)aligned_alloc(32, work_size);
+
+            uint32_t *pos_bufs[8];
+            uint8_t *strand_bufs[8];
+            for (int j = 0; j < 8; j++) {
+                pos_bufs[j] = (uint32_t*)malloc(max_chrom * sizeof(uint32_t));
+                strand_bufs[j] = (uint8_t*)malloc(max_chrom);
+            }
+
+            double best = 1e9;
+            size_t total_count = 0;
+            for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
+                size_t run_count = 0;
+                clock_t start = clock();
+
+                // Process chromosomes in groups of 8
+                for (size_t i = 0; i < chroms.size(); i += 8) {
+                    const char *mseqs[8] = {NULL};
+                    size_t mlens[8] = {0}, counts[8] = {0};
+                    int n = 0;
+                    for (size_t j = i; j < i + 8 && j < chroms.size(); j++) {
+                        mseqs[n] = chroms[j];
+                        mlens[n] = chrom_lens[j];
+                        n++;
+                    }
+
+                    size_t plk[8];
+                    __m256i *hb;
+                    size_t mns = csyncmer_hash_only_multi(
+                        mseqs, mlens, (size_t)K, (size_t)S,
+                        work_buf, work_size, &hb, plk);
+                    if (hb) {
+                        __m256i *ring = csyncmer_split_ring_buf(
+                            work_buf, mns, (size_t)S);
+                        csyncmer_twostack_only_multi(
+                            hb, mns, plk, (size_t)K, (size_t)S,
+                            pos_bufs, max_chrom, counts, ring);
+                        for (int j = 0; j < n; j++) run_count += counts[j];
+                    }
+                }
+
+                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                if (elapsed < best) best = elapsed;
+                total_count = run_count;
+            }
+            quick_print("NTH32_MULTI8_CANON_POS", total_count, best, seq_mb);
+
+            for (int j = 0; j < 8; j++) { free(pos_bufs[j]); free(strand_bufs[j]); }
+            free(work_buf);
+        }
     }
 
     free((void*)sequence);
+    for (auto c : chroms) free(c);
     return 0;
 }
 
@@ -692,7 +820,7 @@ int main(int argc, char *argv[]) {
     if (strcmp(argv[1], "--quick") == 0) {
         if (argc < 5) {
             fprintf(stderr, "Usage: %s --quick FASTA_FILE K S [filter]\n", argv[0]);
-            fprintf(stderr, "filter: 32, 64, all (default: all)\n");
+            fprintf(stderr, "filter: 32, 64, seqhash, all (default: all)\n");
             return 1;
         }
         char *fasta_file = argv[2];

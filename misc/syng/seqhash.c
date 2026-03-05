@@ -23,7 +23,7 @@ SeqhashD *seqhashCreateD (int k, int w, int seed)
   sh->seed = seed ;
   sh->mask = ((U64)1 << (2*k)) - 1 ;
   int i ;
-  
+
   srandom (seed) ;
   sh->factor1 = (random() << 32) | random() | 0x01 ;
   sh->shift1 = 64 - 2*k ;
@@ -100,7 +100,7 @@ bool seqhashNextD (SeqhashIteratorD *si, U64 *kmer, int *pos, bool *isF)
     { *si->hash = advanceHashRCD (si, si->isForward) ;
       ++si->iStart ;
     }
-  
+
   return true ;
 }
 
@@ -113,7 +113,7 @@ SeqhashIteratorD *syncmerIteratorD (SeqhashD *sh, char *s, int len)
   SeqhashIteratorD *si = seqhashIteratorD (sh, s, len) ;
   if (len < sh->w + sh->k) si->isDone = true ; // because we are looking for w-mers not k-mers here
   if (si->isDone) return si ;
-    
+
   /* store first w hashes in hash and set ->min */
   si->min = si->hash[0] ;
   int i ;
@@ -136,7 +136,43 @@ SeqhashIteratorD *syncmerIteratorD (SeqhashD *sh, char *s, int len)
   die ("syncmer initialisation failure") ;
 }
 
-bool syncmerNextD (SeqhashIteratorD *si, U64 *kmer, size_t *pos, bool *isF)
+void syncmerIteratorReinitD (SeqhashIteratorD *si, char *s, int len)
+{
+  SeqhashD *sh = si->sh ;
+  si->s = s ; si->sEnd = s + len ;
+  si->h = 0 ; si->hRC = 0 ;
+  si->base = 0 ; si->iStart = 0 ; si->iMin = 0 ;
+  si->min = 0 ;
+  si->isDone = false ;
+
+  if (len < sh->k) { si->isDone = true ; return ; }
+
+  int i ;
+  for (i = 0 ; i < sh->k ; ++i, ++si->s)
+    { si->h = (si->h << 2) | *si->s ;
+      si->hRC = (si->hRC >> 2) | sh->patternRC[(int)*(si->s)] ;
+    }
+  *si->hash = hashRCD (si, si->isForward) ;
+
+  if (len < sh->w + sh->k) { si->isDone = true ; return ; }
+
+  si->min = si->hash[0] ;
+  for (i = 1 ; i < sh->w ; ++i)
+    { si->hash[i] = advanceHashRCD (si, &si->isForward[i]) ;
+      if (si->hash[i] < si->min) si->min = si->hash[i] ;
+    }
+
+  if (si->hash[0] == si->min || si->hash[sh->w-1] == si->min) return ;
+  while (true)
+    { U64 x = advanceHashRCD (si, &si->isForward[si->iStart]) ;
+      if (si->s >= si->sEnd) { si->isDone = true ; return ; }
+      si->hash[si->iStart++] = x ;
+      if (x <= si->min) { si->min = x ; return ; }
+      if (si->hash[si->iStart] == si->min) return ;
+    }
+}
+
+bool syncmerNextD (SeqhashIteratorD *si, U64 *kmer, int *pos, bool *isF)
 {
   if (si->isDone) return false ; /* we are done */
 
@@ -155,7 +191,7 @@ bool syncmerNextD (SeqhashIteratorD *si, U64 *kmer, size_t *pos, bool *isF)
       si->min = si->hash[si->iStart] = U64MAXD;
       for (i = 0 ; i < si->sh->w ; ++i) if (si->hash[i] < si->min) si->min = si->hash[i] ;
     }
-  
+
   while (true) // move forwards to the next minimum
     { U64 x = advanceHashRCD (si, &si->isForward[si->iStart]) ;
       if (si->s >= si->sEnd) { si->isDone = true ; return true ; }

@@ -118,6 +118,40 @@ static char *read_sequence(struct stream *S) {
     return sequence;
 }
 
+/* Read all sequences from a multi-FASTA, concatenated into one buffer.
+ * Sequence boundaries are silently joined (no separator).  This creates a
+ * small number of chimeric k-mers at each junction — negligible for
+ * throughput benchmarking on whole-genome files.  Matches the behaviour of
+ * simd-minimizers' chr19_syncmers example (read_fasta concatenates all
+ * non-header lines). */
+static char *read_all_sequences(struct stream *S) {
+    size_t capacity = INITIAL_BUF_SIZE;
+    size_t len = 0;
+    char *sequence = (char*)malloc(capacity);
+    if (!sequence) {
+        fprintf(stderr, "Memory allocation failure\n");
+        return NULL;
+    }
+
+    int c;
+    while ((c = stream_getnext(S)) != EOF) {
+        if (c == 0) continue; /* skip sequence boundary marker */
+        sequence[len++] = (char)c;
+        if (len >= capacity) {
+            capacity *= 2;
+            char *tmp = (char*)realloc(sequence, capacity);
+            if (!tmp) {
+                free(sequence);
+                fprintf(stderr, "Memory allocation failure during expansion\n");
+                return NULL;
+            }
+            sequence = tmp;
+        }
+    }
+    sequence[len] = '\0';
+    return sequence;
+}
+
 static void stream_close(stream *S) {
     if (S)
         free(S);

@@ -14,21 +14,21 @@ import matplotlib.pyplot as plt
 METHODS = [
     ("digest",          "digest"),
     ("seqhash",         "seqhash (syng)"),
-    ("rescan",          "Rescan (C)"),
     ("simd-minimizers", "simd-minimizers (Rust)"),
-    ("twostack",        "csyncmer_fast (single)"),
+    ("rescan",          "csyncmer_fast (rescan)"),
+    ("twostack",        "csyncmer_fast (twostack)"),
     ("multi-8",         "csyncmer_fast (multi-8)"),
 ]
 METHOD_ORDER = {m[0]: i for i, m in enumerate(METHODS)}
-COLORS  = ["#999999", "#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#e377c2"]  # grey, red, blue, green, orange, pink
-ALPHAS  = [0.4, 0.4, 0.4, 0.4, 1.0, 1.0]  # csyncmer_fast methods at full opacity
+COLORS  = ["#999999", "#d62728", "#2ca02c", "#1f77b4", "#ff7f0e", "#e377c2"]  # grey, red, green, blue, orange, pink
+ALPHAS  = [0.3, 0.3, 0.3, 1.0, 1.0, 1.0]
 
 # Methods to hide from the plot (data still loaded, just not drawn)
-HIDE = {"seqhash", "rescan"}
+HIDE = {"seqhash"}
 
 DATASETS = [
-    ("chm13", "(a) CHM13 (FASTA)"),
-    ("hifi",  "(b) HiFi reads (FASTQ)"),
+    ("chm13", "(a) CHM13"),
+    ("hifi",  "(b) HiFi reads"),
 ]
 
 # syng panel: map config names in syng.tsv → METHODS keys
@@ -77,14 +77,14 @@ def plot(data, syng_data, outbase):
 
     visible = [(m, c, a) for (m, c, a) in zip(METHODS, COLORS, ALPHAS) if m[0] not in HIDE]
     n_visible = len(visible)
-    bar_width = 0.36
+    bar_width = 0.42
     group_width = n_visible * bar_width
-    group_gap = group_width * 0.45  # space between dataset groups
+    group_gap = group_width * 0.30  # space between dataset groups
 
     has_syng = bool(syng_data)
     ncols = 2 if has_syng else 1
-    fig, axes = plt.subplots(1, ncols, figsize=(4.5 if has_syng else 3.3, 1.8),
-                             gridspec_kw={"width_ratios": [1.8, 0.65]} if has_syng else None)
+    fig, axes = plt.subplots(1, ncols, figsize=(5.0 if has_syng else 3.6, 1.8),
+                             gridspec_kw={"width_ratios": [2.1, 0.65]} if has_syng else None)
     if ncols == 1:
         axes = [axes]
     fig.subplots_adjust(wspace=0.25)
@@ -145,7 +145,7 @@ def plot(data, syng_data, outbase):
                          va="bottom", fontsize=FS - 2)
 
         ax_syng.set_xticks([])
-        ax_syng.set_xlabel("(c) syng (8 threads)", fontsize=FS - 0.5, labelpad=2)
+        ax_syng.set_xlabel("(c) syng", fontsize=FS - 0.5, labelpad=2)
         ax_syng.spines["top"].set_visible(False)
         ax_syng.spines["left"].set_visible(False)
         ax_syng.yaxis.tick_right()
@@ -155,16 +155,18 @@ def plot(data, syng_data, outbase):
         ax_syng.tick_params(axis="y", length=2, pad=1)
         ax_syng.set_ylim(0, max_t)
 
-    # Single legend above all panels — merge handles from all axes
+    # Single legend above all panels — merge handles, ordered by METHODS
     seen = {}
     for ax in axes:
         for h, l in zip(*ax.get_legend_handles_labels()):
             if l not in seen:
                 seen[l] = h
-    handles = list(seen.values())
-    labels = list(seen.keys())
+    label_to_order = {m[1]: i for i, m in enumerate(METHODS)}
+    sorted_labels = sorted(seen.keys(), key=lambda l: label_to_order.get(l, 999))
+    handles = [seen[l] for l in sorted_labels]
+    labels = sorted_labels
     fig.legend(handles, labels, loc="upper center", ncol=3,
-               frameon=False, fontsize=FS - 1, bbox_to_anchor=(0.5, 1.09),
+               frameon=False, fontsize=FS, bbox_to_anchor=(0.53, 1.12),
                handlelength=1.0, handletextpad=0.3, columnspacing=0.8)
 
     # Save PDF + PNG

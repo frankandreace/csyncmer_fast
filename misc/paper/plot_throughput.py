@@ -27,8 +27,8 @@ ALPHAS  = [0.3, 0.3, 0.3, 1.0, 1.0, 1.0]
 HIDE = {"seqhash"}
 
 DATASETS = [
-    ("chm13", "(a) CHM13"),
-    ("hifi",  "(b) HiFi reads"),
+    ("chm13", "(a) CHM13",      "k=31, s=15"),
+    ("hifi",  "(b) HiFi reads", "k=1052, s=31"),
 ]
 
 # syng panel: map config names in syng.tsv → METHODS keys
@@ -92,7 +92,7 @@ def plot(data, syng_data, outbase):
     ax_tp = axes[0]  # throughput axis (panels a + b combined)
 
     max_y = 0
-    for ds_key, _ in DATASETS:
+    for ds_key, _, _ in DATASETS:
         ds_data = data.get(ds_key, {})
         for m_key, _ in METHODS:
             if m_key in ds_data and m_key not in HIDE:
@@ -101,7 +101,7 @@ def plot(data, syng_data, outbase):
 
     # Plot both dataset groups on the same axis
     group_centers = []
-    for g, (ds_key, ds_label) in enumerate(DATASETS):
+    for g, (ds_key, ds_label, ds_params) in enumerate(DATASETS):
         ds_data = data.get(ds_key, {})
         group_center = g * (group_width + group_gap)
         group_centers.append(group_center)
@@ -116,7 +116,7 @@ def plot(data, syng_data, outbase):
                        va="bottom", fontsize=FS - 2)
 
     ax_tp.set_xticks(group_centers)
-    ax_tp.set_xticklabels([dl for _, dl in DATASETS], fontsize=FS - 0.5)
+    ax_tp.set_xticklabels([f"{dl}\n{dp}" for _, dl, dp in DATASETS], fontsize=FS - 0.5)
     ax_tp.tick_params(axis="x", length=0, pad=3)
     ax_tp.spines["top"].set_visible(False)
     ax_tp.spines["right"].set_visible(False)
@@ -145,7 +145,7 @@ def plot(data, syng_data, outbase):
                          va="bottom", fontsize=FS - 2)
 
         ax_syng.set_xticks([])
-        ax_syng.set_xlabel("(c) syng", fontsize=FS - 0.5, labelpad=2)
+        ax_syng.set_xlabel("(c) syng\nHiFi, 8 threads", fontsize=FS - 0.5, labelpad=2)
         ax_syng.spines["top"].set_visible(False)
         ax_syng.spines["left"].set_visible(False)
         ax_syng.yaxis.tick_right()

@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 # Benchmark syng end-to-end on HiFi FASTQ: csyncmer vs seqhash (both AVX2=1)
-# Usage: ./syng_benchmark.sh [RUNS]
+# Usage: ./syng_benchmark.sh [RUNS] [THREADS]
 set -euo pipefail
 
 SYNG_DIR=~/tools/syng
 HIFI=~/data/SRR34765324.20G.fastq
 OUT_DIR=/tmp/syng_hifi_bench
 RUNS=${1:-3}
+THREADS=${2:-8}
+
+# Pin to P-core HTs for reproducibility (CPUs 0..THREADS-1)
+if [ "$THREADS" -gt 1 ]; then
+    CPUS="0-$((THREADS - 1))"
+    TASKSET="taskset -c $CPUS"
+else
+    CPUS="0"
+    TASKSET="taskset -c 0"
+fi
 
 mkdir -p "$OUT_DIR"
 
@@ -14,7 +24,7 @@ echo "========================================"
 echo "Syng HiFi Benchmark (multi8 vs csyncmer vs seqhash)"
 echo "========================================"
 echo "Input: $(basename $HIFI) ($(du -h "$HIFI" | cut -f1))"
-echo "Params: -w 1022 -k 31 -T 10"
+echo "Params: -w 1022 -k 31 -T $THREADS (pinned to CPUs $CPUS)"
 echo "Runs: $RUNS"
 echo ""
 
@@ -48,7 +58,7 @@ run_bench() {
     for i in $(seq 1 "$RUNS"); do
         rm -f "$OUT_DIR/${prefix}."*
         /usr/bin/time -f "TIME_OUTPUT %e %M" \
-            "$bin" -w 1022 -k 31 -T 10 -o "$OUT_DIR/$prefix" "$HIFI" \
+            $TASKSET "$bin" -w 1022 -k 31 -T "$THREADS" -o "$OUT_DIR/$prefix" "$HIFI" \
             > "$OUT_DIR/stdout.txt" 2> "$OUT_DIR/time_stderr.txt"
         t=$(grep '^TIME_OUTPUT' "$OUT_DIR/time_stderr.txt" | awk '{print $2}')
         rss=$(grep '^TIME_OUTPUT' "$OUT_DIR/time_stderr.txt" | awk '{print $3}')

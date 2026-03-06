@@ -437,7 +437,7 @@ static CSYNCMER_ATOMIC_INT CSYNCMER_TABLES_INITIALIZED
 #ifdef __cplusplus
     = {0}
 #else
-    = ATOMIC_VAR_INIT(0)
+    = 0
 #endif
     ;
 

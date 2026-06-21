@@ -119,11 +119,74 @@ void test_canonical_hash_values(){
     printf("[TEST] canonical_hash_values: PASSED (found %zu syncmers)\n", count);
 }
 
+static void test_fasta_reader_multiline() {
+    // single-line sequence
+    {
+        const char *data = ">seq1\nACGT\n";
+        FILE *f = fmemopen((void*)data, strlen(data), "r");
+        stream *S = stream_open_fasta(f);
+        char *seq = read_sequence(S);
+        assert(strcmp(seq, "acgt") == 0);
+        free(seq); stream_close(S); fclose(f);
+    }
+    // multi-line: first char of each non-first line was silently dropped before fix
+    {
+        const char *data = ">seq1\nACGT\nGGCC\n";
+        FILE *f = fmemopen((void*)data, strlen(data), "r");
+        stream *S = stream_open_fasta(f);
+        char *seq = read_sequence(S);
+        assert(strcmp(seq, "acgtggcc") == 0);
+        free(seq); stream_close(S); fclose(f);
+    }
+    // three-line sequence
+    {
+        const char *data = ">seq1\nAAAA\nCCCC\nGGGG\n";
+        FILE *f = fmemopen((void*)data, strlen(data), "r");
+        stream *S = stream_open_fasta(f);
+        char *seq = read_sequence(S);
+        assert(strcmp(seq, "aaaaccccgggg") == 0);
+        free(seq); stream_close(S); fclose(f);
+    }
+    // two sequences: read_sequence stops at '>' boundary
+    {
+        const char *data = ">s1\nACGT\n>s2\nGGCC\n";
+        FILE *f = fmemopen((void*)data, strlen(data), "r");
+        stream *S = stream_open_fasta(f);
+        char *seq1 = read_sequence(S);
+        assert(strcmp(seq1, "acgt") == 0);
+        char *seq2 = read_sequence(S);
+        assert(strcmp(seq2, "ggcc") == 0);
+        free(seq1); free(seq2); stream_close(S); fclose(f);
+    }
+    // two multi-line sequences (tests both boundary detection and char preservation)
+    {
+        const char *data = ">s1\nACGT\nNNNN\n>s2\nGGCC\nTTAA\n";
+        FILE *f = fmemopen((void*)data, strlen(data), "r");
+        stream *S = stream_open_fasta(f);
+        char *seq1 = read_sequence(S);
+        assert(strcmp(seq1, "acgtnnnn") == 0);
+        char *seq2 = read_sequence(S);
+        assert(strcmp(seq2, "ggccttaa") == 0);
+        free(seq1); free(seq2); stream_close(S); fclose(f);
+    }
+    // blank line within sequence is skipped
+    {
+        const char *data = ">seq\nACGT\n\nGGCC\n";
+        FILE *f = fmemopen((void*)data, strlen(data), "r");
+        stream *S = stream_open_fasta(f);
+        char *seq = read_sequence(S);
+        assert(strcmp(seq, "acgtggcc") == 0);
+        free(seq); stream_close(S); fclose(f);
+    }
+    printf("[TEST] fasta_reader_multiline: PASSED\n");
+}
+
 void run_unit_tests(){
     printf("=== RUNNING UNIT TESTS ===\n");
     test_base_to_bits();
     test_canonical_iterator_strand_independence();
     test_canonical_hash_values();
+    test_fasta_reader_multiline();
     printf("=== ALL UNIT TESTS PASSED ===\n\n");
 }
 

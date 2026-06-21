@@ -52,6 +52,8 @@ static int stream_getnext_fasta(stream *S) {
                 S->pos--;
                 return 0;
             }
+            if (next != EOF)
+                S->pos--;
             continue;
         }
         if (c == '>') {

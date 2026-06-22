@@ -129,7 +129,7 @@ static void test_fasta_reader_multiline() {
         assert(strcmp(seq, "acgt") == 0);
         free(seq); stream_close(S); fclose(f);
     }
-    // multi-line: first char of each non-first line was silently dropped before fix
+    // multi-line sequence
     {
         const char *data = ">seq1\nACGT\nGGCC\n";
         FILE *f = fmemopen((void*)data, strlen(data), "r");
@@ -147,7 +147,7 @@ static void test_fasta_reader_multiline() {
         assert(strcmp(seq, "aaaaccccgggg") == 0);
         free(seq); stream_close(S); fclose(f);
     }
-    // two sequences: read_sequence stops at '>' boundary
+    // two sequences
     {
         const char *data = ">s1\nACGT\n>s2\nGGCC\n";
         FILE *f = fmemopen((void*)data, strlen(data), "r");
@@ -158,7 +158,7 @@ static void test_fasta_reader_multiline() {
         assert(strcmp(seq2, "ggcc") == 0);
         free(seq1); free(seq2); stream_close(S); fclose(f);
     }
-    // two multi-line sequences (tests both boundary detection and char preservation)
+    // two multi-line sequences
     {
         const char *data = ">s1\nACGT\nNNNN\n>s2\nGGCC\nTTAA\n";
         FILE *f = fmemopen((void*)data, strlen(data), "r");
@@ -169,7 +169,7 @@ static void test_fasta_reader_multiline() {
         assert(strcmp(seq2, "ggccttaa") == 0);
         free(seq1); free(seq2); stream_close(S); fclose(f);
     }
-    // blank line within sequence is skipped
+    // blank line within sequence
     {
         const char *data = ">seq\nACGT\n\nGGCC\n";
         FILE *f = fmemopen((void*)data, strlen(data), "r");

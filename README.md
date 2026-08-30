@@ -72,6 +72,10 @@ gcc -std=c11 -o example -march=native example.c
 | `csyncmer_twostack_simd_32_canonical_positions` | Positions + strands | ~450-480 MB/s | AVX2 |
 | `csyncmer_iterator_*_canonical_64` | Positions + strands | ~285-330 MB/s | Scalar, portable, exact |
 
+Parameters must satisfy `2 <= s < k` and `length >= k`; every entry point returns 0 (or `NULL`,
+for the iterator constructors) otherwise. `s == 1` is rejected because a 1-base s-mer
+degenerates the rolling-hash delay ring.
+
 All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
 Speeds measured on chr19 (59 MB), best-of-5, Intel Core Ultra 5 135H (4.6 GHz).
 
@@ -119,7 +123,7 @@ A reference Rust benchmark (`bench_syncmer_fastq.rs`) using [simd-minimizers](ht
 
 ### Closed Syncmers
 
-A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (s < k) it contains is either at the first or last position (scanning left to right).
+A k-mer is a closed syncmer iff the minimal LEFTMOST s-mer (`2 <= s < k`) it contains is either at the first or last position (scanning left to right).
 
 ### Architecture
 

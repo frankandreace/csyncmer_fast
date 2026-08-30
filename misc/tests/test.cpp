@@ -160,25 +160,74 @@ void test_canonical_fallback_strands(){
 }
 
 #ifdef __AVX2__
+// rot == 0 whenever (S-1)*7 % 32 == 0, i.e. S is 1, 33, 65, ... S=1 is rejected
+// by the API, so S=33 is the smallest reachable zero-rotation case.
 void test_simd_zero_rotation(){
-    char sequence[257];
+    char sequence[4097];
     uint32_t state = 17;
     for (size_t i = 0; i < sizeof(sequence) - 1; ++i) {
         state = state * 1664525U + 1013904223U;
         sequence[i] = "ACGT"[state >> 30];
     }
     sequence[sizeof(sequence) - 1] = '\0';
+    const size_t length = sizeof(sequence) - 1;
+    const size_t K = 51, S = 33;
+    assert(((S - 1) * 7) % 32 == 0);
 
-    size_t simd = csyncmer_twostack_simd_32_count(sequence, 256, 31, 1);
-    uint32_t positions[256];
-    size_t positions_count = csyncmer_twostack_simd_32_positions(
-        sequence, 256, 31, 1, positions, 256);
-    assert(simd > 0);
-    assert(positions_count == simd);
+    // The scalar rescan is exact, so it pins down the expected answer.
+    size_t expected = csyncmer_canonical_rescan_32_count(sequence, length, K, S);
+    assert(expected > 0);
 
-    printf("[TEST] simd_zero_rotation: PASSED\n");
+    size_t simd = csyncmer_twostack_simd_32_canonical_count(
+        sequence, length, K, S);
+    assert(simd == expected);
+
+    uint32_t positions[4096];
+    uint8_t strands[4096];
+    size_t positions_count = csyncmer_twostack_simd_32_canonical_positions(
+        sequence, length, K, S, positions, strands, 4096);
+    assert(positions_count == expected);
+
+    uint32_t exact_positions[4096];
+    uint8_t exact_strands[4096];
+    size_t exact_count = csyncmer_canonical_rescan_32_positions(
+        sequence, length, K, S, exact_positions, exact_strands, 4096);
+    assert(exact_count == expected);
+    for (size_t i = 0; i < expected; ++i) {
+        assert(positions[i] == exact_positions[i]);
+        assert(strands[i] == exact_strands[i]);
+    }
+
+    printf("[TEST] simd_zero_rotation: PASSED (K=%zu S=%zu, %zu syncmers)\n",
+           K, S, expected);
 }
 #endif
+
+// s must be at least 2: an s-mer of length 1 makes the rolling-hash delay ring
+// degenerate (delay_size == 1), so every entry point rejects it.
+void test_rejects_s_below_two(){
+    const char* sequence = "ACGTTGCATGTCGCATGATGCATGAGAGCTACGTTGCATGTCGCATGATGCATGAGAGCT";
+    size_t length = strlen(sequence);
+    uint32_t positions[64];
+    uint8_t strands[64];
+
+    assert(csyncmer_rescan_32_count(sequence, length, 15, 1, NULL) == 0);
+    assert(csyncmer_canonical_rescan_32_count(sequence, length, 15, 1) == 0);
+#ifdef __AVX2__
+    assert(csyncmer_twostack_simd_32_count(sequence, length, 15, 1) == 0);
+    assert(csyncmer_twostack_simd_32_canonical_positions(
+        sequence, length, 15, 1, positions, strands, 64) == 0);
+#else
+    (void)positions; (void)strands;
+#endif
+    assert(csyncmer_iterator_create_64(sequence, length, 15, 1) == NULL);
+    assert(csyncmer_iterator_create_canonical_64(sequence, length, 15, 1) == NULL);
+
+    // s == 2 remains valid.
+    assert(csyncmer_canonical_rescan_32_count(sequence, length, 15, 2) > 0);
+
+    printf("[TEST] rejects_s_below_two: PASSED\n");
+}
 
 static void test_fasta_reader_multiline() {
     // single-line sequence
@@ -249,6 +298,7 @@ void run_unit_tests(){
     test_canonical_hash_values();
     test_rescan_exact_capacity();
     test_canonical_fallback_strands();
+    test_rejects_s_below_two();
 #ifdef __AVX2__
     test_simd_zero_rotation();
 #endif

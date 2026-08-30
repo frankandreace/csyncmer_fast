@@ -222,7 +222,7 @@ static inline void csyncmer_twostack_only_multi(
 static inline size_t csyncmer_split_work_buf_size(
     size_t max_read_len, size_t K, size_t S
 ) {
-    if (S == 0 || S >= K) return 0;
+    if (S < 2 || S >= K) return 0;
     size_t window_size = K - S + 1;
     size_t max_num_smers = max_read_len - S + 1;
     size_t n_groups = (max_read_len + 15) / 16;

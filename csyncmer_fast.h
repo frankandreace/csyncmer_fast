@@ -123,7 +123,7 @@ static inline size_t FUNC_NAME(                                                \
     uint8_t* out_strands,                                                      \
     size_t max_positions                                                        \
 ) {                                                                            \
-    if (!sequence || length < K || S == 0 || S >= K) {                         \
+    if (!sequence || length < K || S < 2 || S >= K) {                          \
         return 0;                                                              \
     }                                                                          \
     if (out_positions && max_positions == 0) return 0;                          \
@@ -514,7 +514,7 @@ static inline CsyncmerIterator64* csyncmer_iterator_create_64(
     size_t K,
     size_t S
 ) {
-    if (!sequence || length < K || S == 0 || S >= K) {
+    if (!sequence || length < K || S < 2 || S >= K) {
         return NULL;
     }
 
@@ -711,7 +711,7 @@ static inline CsyncmerIteratorCanonical64* csyncmer_iterator_create_canonical_64
     size_t K,
     size_t S
 ) {
-    if (!sequence || length < K || S == 0 || S >= K) {
+    if (!sequence || length < K || S < 2 || S >= K) {
         return NULL;
     }
 
@@ -1234,7 +1234,7 @@ static inline size_t FUNC_NAME(                                                \
     uint8_t* out_strands,                                                      \
     size_t max_positions                                                        \
 ) {                                                                            \
-    if (!sequence || length < K || S == 0 || S >= K) return 0;                 \
+    if (!sequence || length < K || S < 2 || S >= K) return 0;                  \
     if (COLLECT_POSITIONS && max_positions == 0) return 0;                      \
                                                                                \
     size_t window_size = K - S + 1;                                            \

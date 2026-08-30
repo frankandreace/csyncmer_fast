@@ -31,7 +31,7 @@ static inline void FUNC_NAME(                                                  \
     size_t work_buf_size                                                       \
 ) {                                                                            \
     for (int i = 0; i < 8; i++) out_counts[i] = 0;                            \
-    if (S == 0 || S >= K) return;                                              \
+    if (S < 2 || S >= K) return;                                               \
                                                                                \
     size_t window_size = K - S + 1;                                            \
                                                                                \
@@ -454,7 +454,7 @@ static inline void csyncmer_twostack_simd_32_multi_canonical_positions(
 
 // Compute work buffer size needed for multi-read SIMD with given parameters.
 static inline size_t csyncmer_multi_work_buf_size(size_t max_read_len, size_t K, size_t S) {
-    if (S == 0 || S >= K) return 0;
+    if (S < 2 || S >= K) return 0;
     size_t window_size = K - S + 1;
     size_t ps_uniform = ((max_read_len + 3) / 4 + 32 + 31) & ~(size_t)31;
     size_t total_packed = 8 * ps_uniform;
@@ -480,7 +480,7 @@ static inline void FUNC_NAME(                                                  \
     size_t work_buf_size                                                       \
 ) {                                                                            \
     for (int i = 0; i < 8; i++) out_counts[i] = 0;                            \
-    if (S == 0 || S >= K) return;                                              \
+    if (S < 2 || S >= K) return;                                               \
                                                                                \
     size_t window_size = K - S + 1;                                            \
                                                                                \
@@ -888,7 +888,7 @@ static inline void csyncmer_twostack_simd_32_multi_canonical_positions_twopass(
 
 // Compute work buffer size for two-pass multi-read SIMD.
 static inline size_t csyncmer_multi_work_buf_size_twopass(size_t max_read_len, size_t K, size_t S) {
-    if (S == 0 || S >= K) return 0;
+    if (S < 2 || S >= K) return 0;
     size_t window_size = K - S + 1;
     size_t max_num_smers = max_read_len - S + 1;
     size_t ps_uniform = ((max_read_len + 3) / 4 + 32 + 31) & ~(size_t)31;

@@ -117,7 +117,7 @@ static inline size_t csyncmer_hash_only_multi(
     __m256i **out_hash_buf,        // if non-NULL: store hash_buf ptr, skip free
     size_t *out_per_lane_kmers     // if non-NULL: write 8-element per-lane kmer counts
 ) {
-    if (S == 0 || S >= K) return 0;
+    if (S < 2 || S >= K) return 0;
 
     size_t _per_lane_kmers[8];
     size_t *per_lane_kmers = out_per_lane_kmers ? out_per_lane_kmers : _per_lane_kmers;
@@ -311,7 +311,7 @@ static inline size_t csyncmer_pack_only_multi(
     uint8_t* work_buf,
     size_t work_buf_size
 ) {
-    if (S == 0 || S >= K) return 0;
+    if (S < 2 || S >= K) return 0;
 
     size_t per_lane_kmers[8];
     int any_valid = 0;

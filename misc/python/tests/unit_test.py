@@ -7,8 +7,17 @@ from csyncmer_fast import (
     count_syncmers_canonical,
 )
 
-# Sequence long enough for k=15, s=8 (need at least 15 bases)
-SEQUENCE = "ACGTACGTACGTACGTACGTACGTACGTACGT"  # 32 bases
+# Pseudo-random 300-base sequence. It deliberately has no short period: a
+# low-period repeat (e.g. "ACGT" * n) makes many s-mers hash-tie exactly, and
+# the 32-bit and 64-bit code paths then break those ties differently enough
+# that cross-checking their counts stops being meaningful.
+SEQUENCE = (
+    "GACGGTACAGGAGCTGGCAAGGAGAGGCAGTTGGCAGACGGTACAGCTAGGCACCTCGGT"
+    "CCAATAGACTAAACATCGCACCCGAGGGTCATTGGTGAGACAAATCGCCTGCATTTAAAG"
+    "TAGGAATCACTTTATACTAATGTGCTTCCATGAATCTGACGAGTCTCGTGGGGCAGAAGT"
+    "GCCCGGTCGCCTATTTTTTTACGTTCCTTGTACTAGCACCTAATACCATACAAAAGCCAT"
+    "GCGCGTTAAGTCCGCGGCGTGTTCTCGTTCGGGGACCCAAACATCTAGTTATGTTAGCAC"
+)
 K = 15
 S = 8
 
@@ -145,8 +154,12 @@ class TestCountFunctions:
         assert abs(iter_count - simd_count) <= max(2, iter_count // 3)
 
     def test_count_canonical_reasonable(self):
+        """SIMD count uses 32-bit hash, iterator uses 64-bit.
+        Different hash sizes break ties differently, so the counts are close
+        rather than equal. On SEQUENCE they differ by 1."""
         iter_count = len(list(CanonicalSyncmerIterator(SEQUENCE, K, S)))
         simd_count = count_syncmers_canonical(SEQUENCE, K, S)
         num_kmers = len(SEQUENCE) - K + 1
         assert 0 < iter_count <= num_kmers
         assert 0 < simd_count <= num_kmers
+        assert abs(iter_count - simd_count) <= max(2, iter_count // 3)

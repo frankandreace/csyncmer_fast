@@ -111,6 +111,28 @@ Reproduce with:
 ./sweep_ks.sh ~/data/chm13v2.0.fa > sweep_chm13.tsv
 ```
 
+Same measurement on HiFi reads (SRR34765324, 9.9 Gbp):
+
+| k, s | w | rescan | twostack | multi-8 | simd-minimizers |
+|---|---|---|---|---|---|
+| 15, 11 | 5 | 0.19 | 0.43 | 0.61 | 0.56 |
+| 15, 7 | 9 | 0.26 | 0.49 | 0.67 | 0.59 |
+| 21, 11 | 11 | 0.27 | 0.46 | 0.70 | 0.61 |
+| 21, 15 | 7 | 0.22 | 0.43 | 0.62 | 0.57 |
+| 31, 15 | 17 | 0.30 | 0.49 | 0.76 | 0.65 |
+| 31, 19 | 13 | 0.30 | 0.49 | 0.69 | 0.60 |
+| 31, 23 | 9 | 0.25 | 0.47 | 0.67 | 0.61 |
+| 41, 21 | 21 | 0.32 | 0.53 | 0.78 | 0.65 |
+| 51, 31 | 21 | 0.32 | 0.53 | 0.82 | 0.63 |
+| 285, 31 | 255 | 0.43 | 0.87 | 1.70 | 0.60 |
+| 541, 31 | 511 | 0.45 | 0.80 | 1.72 | 0.54 |
+| 1052, 31 | 1022 | 0.46 | 0.69 | 1.95 | 0.43 |
+
+```bash
+./sweep_ks_hifi.sh ~/data/SRR34765324.20G.fastq > sweep_hifi.tsv
+```
+
+
 Measured on an Intel Core Ultra 5 135H, GCC 15.2.0, rustc 1.92.0
 (simd-minimizers 2.3.0, `-C target-cpu=native`), single-threaded.
 

@@ -72,6 +72,49 @@ Runs all implementations (including reference/legacy ones) with timing, writes a
 
 Output lines tagged `[[HASHING ...]]` are pure hashing speed (no syncmer logic). Lines tagged `[[SYNCMERS ...]]` include the full syncmer detection pipeline. The tag also shows the hash type (`syng`, `nth32`, `nth64`, `nth128`) and algorithm variant.
 
+## Reproducing the paper figure
+
+Collects the throughput panels of Figure 1 -- CHM13v2.0 (k=31 s=15) and HiFi
+reads (k=1052 s=31) -- and regenerates the plot:
+
+```bash
+../paper/run_benchmarks.sh > data.tsv
+python3 ../paper/plot_throughput.py data.tsv -o fig_throughput.pdf
+```
+
+Dataset paths are set at the top of `run_benchmarks.sh`. Requires the
+`simd-minimizers` and `digest` binaries in addition to this directory's
+`benchmark` and `misc/fastq/bench_syncmer_fastq`.
+
+
+## Throughput across (k, s) parameters
+
+Canonical closed-syncmer detection with position output, measured on CHM13v2.0
+(3.1 Gbp) for a range of commonly used (k, s) values. Throughput in GB/s;
+`w = k - s + 1` is the s-mer window length.
+
+| k, s | w | rescan | twostack | multi-8 | simd-minimizers |
+|---|---|---|---|---|---|
+| 15, 7 | 9 | 0.278 | 0.462 | 0.527 | 0.521 |
+| 15, 11 | 5 | 0.206 | 0.437 | 0.494 | 0.482 |
+| 21, 11 | 11 | 0.282 | 0.459 | 0.546 | 0.552 |
+| 21, 15 | 7 | 0.241 | 0.447 | 0.519 | 0.497 |
+| 31, 15 | 17 | 0.334 | 0.514 | 0.618 | 0.566 |
+| 31, 19 | 13 | 0.316 | 0.478 | 0.578 | 0.514 |
+| 31, 23 | 9 | 0.280 | 0.477 | 0.529 | 0.519 |
+| 41, 21 | 21 | 0.342 | 0.502 | 0.631 | 0.597 |
+| 51, 31 | 21 | 0.342 | 0.517 | 0.620 | 0.584 |
+
+Reproduce with:
+
+```bash
+./sweep_ks.sh ~/data/chm13v2.0.fa > sweep_chm13.tsv
+```
+
+Measured on an Intel Core Ultra 5 135H, GCC 15.2.0, rustc 1.92.0
+(simd-minimizers 2.3.0, `-C target-cpu=native`), single-threaded.
+
+
 ## Files
 
 | File | Description |
@@ -81,4 +124,5 @@ Output lines tagged `[[HASHING ...]]` are pure hashing speed (no syncmer logic).
 | `fasta_reader.h` | Shared header-only FASTA parser |
 | `Makefile` | Build rules |
 | `test_100kbp.fasta` | Small test sequence (100 kbp) |
+| `sweep_ks.sh` | (k, s) parameter sweep driver (writes TSV) |
 | `results/` | Benchmark output (TSV + plots) |

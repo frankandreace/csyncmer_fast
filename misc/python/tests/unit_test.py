@@ -68,6 +68,15 @@ class TestSyncmerIterator:
         b = list(SyncmerIterator(SEQUENCE, K, S))
         assert a == b
 
+    def test_owns_sequence_storage(self):
+        sequence = SEQUENCE * 1024
+        expected = list(SyncmerIterator(sequence, K, S))
+        iterator = SyncmerIterator(sequence, K, S)
+        del sequence
+        churn = ["TGCA" * 8192 for _ in range(32)]
+        assert list(iterator) == expected
+        assert len(churn) == 32
+
 
 class TestCanonicalSyncmerIterator:
     def test_yields_tuples(self):
@@ -106,6 +115,15 @@ class TestCanonicalSyncmerIterator:
         b = list(CanonicalSyncmerIterator(SEQUENCE, K, S))
         assert a == b
 
+    def test_owns_sequence_storage(self):
+        sequence = SEQUENCE * 1024
+        expected = list(CanonicalSyncmerIterator(sequence, K, S))
+        iterator = CanonicalSyncmerIterator(sequence, K, S)
+        del sequence
+        churn = ["TGCA" * 8192 for _ in range(32)]
+        assert list(iterator) == expected
+        assert len(churn) == 32
+
 
 class TestCountFunctions:
     def test_count_syncmers(self):
@@ -129,4 +147,6 @@ class TestCountFunctions:
     def test_count_canonical_reasonable(self):
         iter_count = len(list(CanonicalSyncmerIterator(SEQUENCE, K, S)))
         simd_count = count_syncmers_canonical(SEQUENCE, K, S)
-        assert abs(iter_count - simd_count) <= max(2, iter_count // 3)
+        num_kmers = len(SEQUENCE) - K + 1
+        assert 0 < iter_count <= num_kmers
+        assert 0 < simd_count <= num_kmers

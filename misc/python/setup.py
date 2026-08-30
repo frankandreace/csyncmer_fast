@@ -8,12 +8,11 @@ REPO_ROOT = ROOT_DIR.parent.parent
 HEADER = 'csyncmer_fast.h'
 LOCAL_HEADER = ROOT_DIR / HEADER
 
-# Copy header from repo root into package dir so it's available during
-# sdist/wheel builds (which run from a temp directory).
-if not LOCAL_HEADER.exists():
-    repo_header = REPO_ROOT / HEADER
-    if repo_header.exists():
-        shutil.copy2(repo_header, LOCAL_HEADER)
+# Refresh the local header when building from the repository. In an sdist the
+# copied header is already present and the repository root is unavailable.
+repo_header = REPO_ROOT / HEADER
+if repo_header.exists():
+    shutil.copy2(repo_header, LOCAL_HEADER)
 
 if not LOCAL_HEADER.exists():
     raise RuntimeError(

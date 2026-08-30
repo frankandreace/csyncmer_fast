@@ -9,6 +9,8 @@ misc/tests/results/
 misc/python/dist/
 misc/python/*.egg-info/
 misc/python/build/
+misc/python/csyncmer_fast.h
+misc/python/csyncmer_fast/*.so
 
 # Benchmark results
 benchmark/

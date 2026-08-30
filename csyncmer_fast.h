@@ -15,6 +15,8 @@
 #define CSYNCMER_ATOMIC_INT std::atomic<int>
 #define CSYNCMER_ATOMIC_LOAD(x) (x).load()
 #define CSYNCMER_ATOMIC_STORE(x, v) (x).store(v)
+#define CSYNCMER_ATOMIC_CAS(x, expected, desired) \
+    (x).compare_exchange_strong((expected), (desired))
 #define CSYNCMER_THREAD_LOCAL thread_local
 #define CSYNCMER_ALIGNAS(n) alignas(n)
 #else
@@ -23,6 +25,8 @@
 #define CSYNCMER_ATOMIC_INT atomic_int
 #define CSYNCMER_ATOMIC_LOAD(x) atomic_load(&(x))
 #define CSYNCMER_ATOMIC_STORE(x, v) atomic_store(&(x), v)
+#define CSYNCMER_ATOMIC_CAS(x, expected, desired) \
+    atomic_compare_exchange_strong(&(x), &(expected), (desired))
 #define CSYNCMER_THREAD_LOCAL _Thread_local
 #define CSYNCMER_ALIGNAS(n) alignas(n)
 #endif
@@ -41,7 +45,12 @@
 #define CSYNCMER_ALIGNED_ALLOC(align, size) _aligned_malloc((size), (align))
 #define CSYNCMER_ALIGNED_FREE(p) _aligned_free(p)
 #else
-#define CSYNCMER_ALIGNED_ALLOC(align, size) aligned_alloc((align), (size))
+static inline void* csyncmer_aligned_alloc(size_t alignment, size_t size) {
+    if (size > SIZE_MAX - (alignment - 1)) return NULL;
+    size_t rounded_size = (size + alignment - 1) & ~(alignment - 1);
+    return aligned_alloc(alignment, rounded_size);
+}
+#define CSYNCMER_ALIGNED_ALLOC(align, size) csyncmer_aligned_alloc((align), (size))
 #define CSYNCMER_ALIGNED_FREE(p) free(p)
 #endif
 
@@ -154,6 +163,14 @@ static inline size_t FUNC_NAME(                                                \
     size_t buf_mask = buf_size - 1;                                            \
     uint32_t* hash_buffer = (uint32_t*)malloc(buf_size * sizeof(uint32_t));     \
     if (!hash_buffer) return 0;                                                \
+    uint8_t* strand_buffer = NULL;                                             \
+    if (CANONICAL && out_strands) {                                            \
+        strand_buffer = (uint8_t*)malloc(buf_size * sizeof(uint8_t));          \
+        if (!strand_buffer) {                                                  \
+            free(hash_buffer);                                                 \
+            return 0;                                                          \
+        }                                                                      \
+    }                                                                          \
                                                                                \
     size_t syncmer_count = 0;                                                  \
                                                                                \
@@ -176,6 +193,7 @@ static inline size_t FUNC_NAME(                                                \
         effective_hash = (fw_hash <= rc_hash) ? fw_hash : rc_hash;             \
     }                                                                          \
     hash_buffer[0] = effective_hash;                                           \
+    if (strand_buffer) strand_buffer[0] = (fw_hash <= rc_hash) ? 0 : 1;        \
                                                                                \
     /* Rolling state for forward */                                            \
     uint32_t fw = fw_hash ^ f_rot[IDX_ASCII[seq[0]]];                         \
@@ -200,6 +218,9 @@ static inline size_t FUNC_NAME(                                                \
             effective_hash = fw_hash;                                          \
         }                                                                      \
         hash_buffer[i & buf_mask] = effective_hash;                            \
+        if (strand_buffer) {                                                   \
+            strand_buffer[i & buf_mask] = (fw_hash <= rc_hash) ? 0 : 1;        \
+        }                                                                      \
     }                                                                          \
                                                                                \
     /* Find minimum in first window */                                         \
@@ -215,18 +236,19 @@ static inline size_t FUNC_NAME(                                                \
     /* Check first k-mer */                                                    \
     if (min_pos == 0 || min_pos == window_size - 1) {                          \
         if (out_positions) {                                                   \
+            if (syncmer_count >= max_positions) {                              \
+                fprintf(stderr, "csyncmer error: output buffer too small"      \
+                        " (max_positions=%zu)\n", max_positions);              \
+                free(strand_buffer);                                           \
+                free(hash_buffer);                                             \
+                return 0;                                                      \
+            }                                                                  \
             out_positions[syncmer_count] = 0;                                  \
             if (CANONICAL && out_strands) {                                    \
-                out_strands[syncmer_count] = 0; /* strand not tracked in rescan */ \
+                out_strands[syncmer_count] = strand_buffer[min_pos & buf_mask]; \
             }                                                                  \
         }                                                                      \
         syncmer_count++;                                                       \
-        if (out_positions && syncmer_count >= max_positions) {                  \
-            fprintf(stderr, "csyncmer error: output buffer too small"          \
-                    " (max_positions=%zu)\n", max_positions);                   \
-            free(hash_buffer);                                                 \
-            return 0;                                                          \
-        }                                                                      \
     }                                                                          \
                                                                                \
     /* Main loop with branch-free min update */                                \
@@ -249,6 +271,9 @@ static inline size_t FUNC_NAME(                                                \
             effective_hash = fw_hash;                                          \
         }                                                                      \
         hash_buffer[i & buf_mask] = effective_hash;                            \
+        if (strand_buffer) {                                                   \
+            strand_buffer[i & buf_mask] = (fw_hash <= rc_hash) ? 0 : 1;        \
+        }                                                                      \
                                                                                \
         /* RESCAN: update minimum */                                           \
         if (min_pos < kmer_idx) {                                              \
@@ -271,21 +296,24 @@ static inline size_t FUNC_NAME(                                                \
         size_t min_offset = min_pos - kmer_idx;                                \
         if (min_offset == 0 || min_offset == window_size - 1) {                \
             if (out_positions) {                                               \
+                if (syncmer_count >= max_positions) {                          \
+                    fprintf(stderr, "csyncmer error: output buffer too small"  \
+                            " (max_positions=%zu)\n", max_positions);          \
+                    free(strand_buffer);                                       \
+                    free(hash_buffer);                                         \
+                    return 0;                                                  \
+                }                                                              \
                 out_positions[syncmer_count] = (uint32_t)kmer_idx;             \
                 if (CANONICAL && out_strands) {                                \
-                    out_strands[syncmer_count] = 0;                            \
+                    out_strands[syncmer_count] =                               \
+                        strand_buffer[min_pos & buf_mask];                     \
                 }                                                              \
             }                                                                  \
             syncmer_count++;                                                   \
-            if (out_positions && syncmer_count >= max_positions) {              \
-                fprintf(stderr, "csyncmer error: output buffer too small"      \
-                        " (max_positions=%zu)\n", max_positions);              \
-                free(hash_buffer);                                             \
-                return 0;                                                      \
-            }                                                                  \
         }                                                                      \
     }                                                                          \
                                                                                \
+    free(strand_buffer);                                                       \
     free(hash_buffer);                                                         \
     return syncmer_count;                                                      \
 }
@@ -442,13 +470,20 @@ static CSYNCMER_ATOMIC_INT CSYNCMER_TABLES_INITIALIZED
     ;
 
 static inline void csyncmer_ensure_tables_initialized(void) {
-    if (CSYNCMER_ATOMIC_LOAD(CSYNCMER_TABLES_INITIALIZED)) return;
-    // Initialization is idempotent, so concurrent writes are harmless
-    csyncmer_init_ascii_hash_table_64(CSYNCMER_F_ASCII_64);
-    csyncmer_init_ascii_rc_table_64(CSYNCMER_RC_ASCII_64);
-    csyncmer_init_ascii_rc_rotr7_table_64(CSYNCMER_RC_ROTR7_ASCII_64);
-    csyncmer_init_ascii_to_idx(CSYNCMER_IDX_ASCII);
-    CSYNCMER_ATOMIC_STORE(CSYNCMER_TABLES_INITIALIZED, 1);
+    if (CSYNCMER_ATOMIC_LOAD(CSYNCMER_TABLES_INITIALIZED) == 2) return;
+
+    int expected = 0;
+    if (CSYNCMER_ATOMIC_CAS(CSYNCMER_TABLES_INITIALIZED, expected, 1)) {
+        csyncmer_init_ascii_hash_table_64(CSYNCMER_F_ASCII_64);
+        csyncmer_init_ascii_rc_table_64(CSYNCMER_RC_ASCII_64);
+        csyncmer_init_ascii_rc_rotr7_table_64(CSYNCMER_RC_ROTR7_ASCII_64);
+        csyncmer_init_ascii_to_idx(CSYNCMER_IDX_ASCII);
+        CSYNCMER_ATOMIC_STORE(CSYNCMER_TABLES_INITIALIZED, 2);
+        return;
+    }
+
+    while (CSYNCMER_ATOMIC_LOAD(CSYNCMER_TABLES_INITIALIZED) != 2) {
+    }
 }
 
 // ============================================================================
@@ -1298,7 +1333,7 @@ static inline size_t FUNC_NAME(                                                \
     alignas(32) uint32_t f_rot_arr[8];                                         \
     for (int i = 0; i < 8; i++) {                                              \
         uint32_t x = CSYNCMER_SIMD_F32[i];                                    \
-        f_rot_arr[i] = (x << rot) | (x >> (32 - rot));                        \
+        f_rot_arr[i] = rot ? ((x << rot) | (x >> (32 - rot))) : x;            \
     }                                                                          \
     __m256i f_rot_table = _mm256_load_si256((const __m256i*)f_rot_arr);        \
                                                                                \
@@ -1313,7 +1348,7 @@ static inline size_t FUNC_NAME(                                                \
         alignas(32) uint32_t c_rot_arr[8];                                     \
         for (int i = 0; i < 8; i++) {                                          \
             uint32_t cx = CSYNCMER_SIMD_RC32[i];                               \
-            c_rot_arr[i] = (cx << rot) | (cx >> (32 - rot));                   \
+            c_rot_arr[i] = rot ? ((cx << rot) | (cx >> (32 - rot))) : cx;      \
         }                                                                      \
         c_rot_table = _mm256_load_si256((const __m256i*)c_rot_arr);            \
     }                                                                          \
@@ -1656,7 +1691,6 @@ static inline size_t FUNC_NAME(                                                \
                 batch_pos[pi] = _mm256_setzero_si256();                        \
             __m256i tp[8];                                                     \
             csyncmer_transpose_8x8(batch_pos, tp);                            \
-            __m256i bb = _mm256_set1_epi32((int)batch_base_kmer);             \
             for (int lane = 0; lane < 8; lane++) {                             \
                 alignas(32) uint32_t absp[8];                                  \
                 for (int j = 0; j < 8; j++)                                    \
@@ -1698,6 +1732,8 @@ static inline size_t FUNC_NAME(                                                \
         if (total > max_positions) {                                           \
             fprintf(stderr, "csyncmer error: output buffer too small"          \
                     " (need %zu, have %zu)\n", total, max_positions);          \
+            CSYNCMER_ALIGNED_FREE(ring_buf);                                   \
+            CSYNCMER_ALIGNED_FREE(strand_ring);                                \
             CSYNCMER_ALIGNED_FREE(delay_buf); CSYNCMER_ALIGNED_FREE(packed);   \
             return 0;                                                          \
         }                                                                      \

@@ -1,5 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include <cstring>
+#include <string>
 #include <vector>
 
 #include "csyncmer_fast.h"
@@ -10,10 +12,13 @@ namespace py = pybind11;
 class PySyncmerIterator
 {
 private:
+    std::string sequence_storage;
     CsyncmerIterator64* iterator;
 public:
-    PySyncmerIterator(const std::string& sequence, size_t k, size_t s) {
-        iterator = csyncmer_iterator_create_64(sequence.data(), sequence.size(), k, s);
+    PySyncmerIterator(const std::string& sequence, size_t k, size_t s)
+        : sequence_storage(sequence),
+          iterator(csyncmer_iterator_create_64(
+              sequence_storage.data(), sequence_storage.size(), k, s)) {
         if (!iterator) {
             throw std::runtime_error(
                 "Failed to create syncmer iterator. "
@@ -57,11 +62,13 @@ public:
 class PyCanonicalSyncmerIterator
 {
 private:
+    std::string sequence_storage;
     CsyncmerIteratorCanonical64* iterator;
 public:
-    PyCanonicalSyncmerIterator(const std::string& sequence, size_t k, size_t s) {
-        iterator = csyncmer_iterator_create_canonical_64(
-            sequence.data(), sequence.size(), k, s);
+    PyCanonicalSyncmerIterator(const std::string& sequence, size_t k, size_t s)
+        : sequence_storage(sequence),
+          iterator(csyncmer_iterator_create_canonical_64(
+              sequence_storage.data(), sequence_storage.size(), k, s)) {
         if (!iterator) {
             throw std::runtime_error(
                 "Failed to create canonical syncmer iterator. "

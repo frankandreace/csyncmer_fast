@@ -119,6 +119,67 @@ void test_canonical_hash_values(){
     printf("[TEST] canonical_hash_values: PASSED (found %zu syncmers)\n", count);
 }
 
+void test_rescan_exact_capacity(){
+    const char* sequence = "ACGTTGCATGTCGCATGATGCATGAGAGCTACGTTGCATGTCGCATGATGCATGAGAGCT";
+    size_t length = strlen(sequence);
+    size_t K = 15, S = 8;
+    size_t count = csyncmer_rescan_32_count(sequence, length, K, S, NULL);
+    assert(count > 0);
+
+    uint32_t* positions = (uint32_t*)malloc(count * sizeof(uint32_t));
+    assert(positions != NULL);
+    size_t positions_count = csyncmer_rescan_32_positions(
+        sequence, length, K, S, positions, count);
+    assert(positions_count == count);
+    free(positions);
+
+    printf("[TEST] rescan_exact_capacity: PASSED\n");
+}
+
+void test_canonical_fallback_strands(){
+    const char* sequence = "ACGTTGCATGTCGCATGATGCATGAGAGCTACGTTGCATGTCGCATGATGCATGAGAGCT";
+    size_t length = strlen(sequence);
+    size_t K = 15, S = 8;
+    uint32_t positions[64];
+    uint8_t strands[64];
+
+    // Fewer than 64 k-mers forces the public SIMD API through scalar fallback.
+    assert(length - K + 1 < 64);
+    size_t count = csyncmer_twostack_simd_32_canonical_positions(
+        sequence, length, K, S, positions, strands, 64);
+    assert(count > 0);
+
+    bool saw_reverse = false;
+    for (size_t i = 0; i < count; ++i) {
+        assert(strands[i] <= 1);
+        saw_reverse |= strands[i] == 1;
+    }
+    assert(saw_reverse);
+
+    printf("[TEST] canonical_fallback_strands: PASSED\n");
+}
+
+#ifdef __AVX2__
+void test_simd_zero_rotation(){
+    char sequence[257];
+    uint32_t state = 17;
+    for (size_t i = 0; i < sizeof(sequence) - 1; ++i) {
+        state = state * 1664525U + 1013904223U;
+        sequence[i] = "ACGT"[state >> 30];
+    }
+    sequence[sizeof(sequence) - 1] = '\0';
+
+    size_t simd = csyncmer_twostack_simd_32_count(sequence, 256, 31, 1);
+    uint32_t positions[256];
+    size_t positions_count = csyncmer_twostack_simd_32_positions(
+        sequence, 256, 31, 1, positions, 256);
+    assert(simd > 0);
+    assert(positions_count == simd);
+
+    printf("[TEST] simd_zero_rotation: PASSED\n");
+}
+#endif
+
 static void test_fasta_reader_multiline() {
     // single-line sequence
     {
@@ -186,6 +247,11 @@ void run_unit_tests(){
     test_base_to_bits();
     test_canonical_iterator_strand_independence();
     test_canonical_hash_values();
+    test_rescan_exact_capacity();
+    test_canonical_fallback_strands();
+#ifdef __AVX2__
+    test_simd_zero_rotation();
+#endif
     test_fasta_reader_multiline();
     printf("=== ALL UNIT TESTS PASSED ===\n\n");
 }

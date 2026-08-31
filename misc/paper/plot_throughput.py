@@ -27,8 +27,8 @@ ALPHAS  = [0.3, 0.3, 0.3, 1.0, 1.0, 1.0]
 HIDE = {"seqhash"}
 
 DATASETS = [
-    ("chm13", "(a) CHM13",      "k=31, s=15"),
-    ("hifi",  "(b) HiFi reads", "k=1052, s=31"),
+    ("chm13", "(a) CHM13 (3.2GB)", "k=31, s=15"),
+    ("hifi",  "(b) SRR34765324 (20GB)", "k=1023, s=31"),
 ]
 
 # syng panel: map config names in syng.tsv → METHODS keys
@@ -65,7 +65,7 @@ def read_syng(path):
 
 
 def plot(data, syng_data, outbase):
-    FS = 8  # base font size — tune this single value to scale all text
+    FS = 10.5  # base font size — tune this single value to scale all text
     plt.rcParams.update({
         "font.size": FS,
         "axes.labelsize": FS,
@@ -79,15 +79,15 @@ def plot(data, syng_data, outbase):
     n_visible = len(visible)
     bar_width = 0.42
     group_width = n_visible * bar_width
-    group_gap = group_width * 0.30  # space between dataset groups
+    group_gap = group_width * 0.22  # space between dataset groups
 
     has_syng = bool(syng_data)
     ncols = 2 if has_syng else 1
-    fig, axes = plt.subplots(1, ncols, figsize=(5.0 if has_syng else 3.6, 1.8),
-                             gridspec_kw={"width_ratios": [2.1, 0.65]} if has_syng else None)
+    fig, axes = plt.subplots(1, ncols, figsize=(6.4 if has_syng else 3.6, 1.9),
+                             gridspec_kw={"width_ratios": [2.6, 0.85]} if has_syng else None)
     if ncols == 1:
         axes = [axes]
-    fig.subplots_adjust(wspace=0.25)
+    fig.subplots_adjust(wspace=0.10)
 
     ax_tp = axes[0]  # throughput axis (panels a + b combined)
 
@@ -116,7 +116,7 @@ def plot(data, syng_data, outbase):
                        va="bottom", fontsize=FS - 2)
 
     ax_tp.set_xticks(group_centers)
-    ax_tp.set_xticklabels([f"{dl}\n{dp}" for _, dl, dp in DATASETS], fontsize=FS - 0.5)
+    ax_tp.set_xticklabels([f"{dl}\n{dp}" for _, dl, dp in DATASETS], fontsize=FS - 1.5)
     ax_tp.tick_params(axis="x", length=0, pad=3)
     ax_tp.spines["top"].set_visible(False)
     ax_tp.spines["right"].set_visible(False)
@@ -145,14 +145,14 @@ def plot(data, syng_data, outbase):
                          va="bottom", fontsize=FS - 2)
 
         ax_syng.set_xticks([])
-        ax_syng.set_xlabel("(c) syng, 8 threads\nk=1023, s=31", fontsize=FS - 0.5, labelpad=2)
+        ax_syng.set_xlabel("(c) syng, 8 threads\n10 HPRC (636GB)\nk=1023, s=31", fontsize=FS - 1.5, labelpad=2)
         ax_syng.spines["top"].set_visible(False)
         ax_syng.spines["left"].set_visible(False)
         ax_syng.yaxis.tick_right()
         ax_syng.yaxis.set_label_position("right")
         ax_syng.set_ylabel("Time (s)", fontsize=FS, labelpad=6)
-        ax_syng.spines["right"].set_position(("outward", 5))
-        ax_syng.tick_params(axis="y", length=2, pad=1)
+        ax_syng.spines["right"].set_position(("outward", 6))
+        ax_syng.tick_params(axis="y", length=2, pad=3)
         ax_syng.set_ylim(0, max_t)
 
     # Single legend above all panels — merge handles, ordered by METHODS
@@ -166,14 +166,14 @@ def plot(data, syng_data, outbase):
     handles = [seen[l] for l in sorted_labels]
     labels = sorted_labels
     fig.legend(handles, labels, loc="upper center", ncol=3,
-               frameon=False, fontsize=FS, bbox_to_anchor=(0.53, 1.12),
+               frameon=False, fontsize=FS, bbox_to_anchor=(0.53, 1.15),
                handlelength=1.0, handletextpad=0.3, columnspacing=0.8)
 
     # Save PDF + PNG
     pdf_path = outbase if outbase.endswith(".pdf") else outbase + ".pdf"
     png_path = pdf_path.replace(".pdf", ".png")
-    fig.savefig(pdf_path, bbox_inches="tight", pad_inches=0.12)
-    fig.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(pdf_path, bbox_inches="tight", pad_inches=0.02)
+    fig.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
     print(f"Saved {pdf_path} and {png_path}", file=sys.stderr)
     plt.close(fig)
 

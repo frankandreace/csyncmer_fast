@@ -10,8 +10,14 @@ SIMD_MIN=~/tools/simd-minimizers
 CHM13=~/data/chm13v2.0.fa
 HIFI=~/data/SRR34765324.20G.fastq
 
+# Which panels to run: all (default) | chm13 | hifi
+SECTION="${1:-all}"
+export SECTION
+
 # ── Header ──
-echo -e "dataset\tmethod\tthroughput_gbps"
+if [ "$SECTION" = all ]; then
+    echo -e "dataset\tmethod\tthroughput_gbps"
+fi
 
 # ── digest (actual benchmark) ──
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,6 +26,7 @@ bash "$SCRIPT_DIR/benchmark_digest.sh"
 # ============================================================================
 # (a) CHM13 — whole-genome FASTA, K=31, S=15
 # ============================================================================
+if [ "$SECTION" = all ] || [ "$SECTION" = chm13 ]; then
 echo "=== CHM13 (K=31 S=15) ===" >&2
 
 # --- seqhash syng original (Durbin's reference) ---
@@ -63,32 +70,34 @@ simd_mbs=$(echo "$simd_out" | awk '
 ')
 simd_gbps=$(awk "BEGIN {printf \"%.4f\", $simd_mbs / 1000}")
 echo -e "chm13\tsimd-minimizers\t$simd_gbps"
+fi
 
 # ============================================================================
-# (b) HiFi reads — FASTQ, k=31 w=1022 (K=1052 S=31)
+# (b) HiFi reads — FASTQ, k=31 w=993 (K=1023 S=31), matching syng panel (c)
 # ============================================================================
-echo "=== HiFi reads (K=1052 S=31) ===" >&2
+if [ "$SECTION" = all ] || [ "$SECTION" = hifi ]; then
+echo "=== HiFi reads (K=1023 S=31) ===" >&2
 
 # --- seqhash (Durbin's reference, single-threaded) ---
-seqhash_hifi_out=$("$BENCH_FASTQ" -k 31 -w 1022 -seqhash "$HIFI")
+seqhash_hifi_out=$("$BENCH_FASTQ" -k 31 -w 993 -seqhash "$HIFI")
 echo "$seqhash_hifi_out" >&2
 seqhash_hifi_gbps=$(echo "$seqhash_hifi_out" | awk '/^Throughput:/ {print $2}')
 echo -e "hifi\tseqhash\t$seqhash_hifi_gbps"
 
 # --- rescan scalar (bench_syncmer_fastq -rescan) ---
-rescan_out=$("$BENCH_FASTQ" -k 31 -w 1022 -rescan "$HIFI")
+rescan_out=$("$BENCH_FASTQ" -k 31 -w 993 -rescan "$HIFI")
 echo "$rescan_out" >&2
 rescan_gbps=$(echo "$rescan_out" | awk '/^Throughput:/ {print $2}')
 echo -e "hifi\trescan\t$rescan_gbps"
 
 # --- twostack SIMD single (bench_syncmer_fastq -single) ---
-twostack_out=$("$BENCH_FASTQ" -k 31 -w 1022 -single "$HIFI")
+twostack_out=$("$BENCH_FASTQ" -k 31 -w 993 -single "$HIFI")
 echo "$twostack_out" >&2
 twostack_gbps=$(echo "$twostack_out" | awk '/^Throughput:/ {print $2}')
 echo -e "hifi\ttwostack\t$twostack_gbps"
 
 # --- multi-8 split (bench_syncmer_fastq -twopass-nostrand = separate hash + twostack passes) ---
-multi8_out=$("$BENCH_FASTQ" -k 31 -w 1022 -twopass-nostrand "$HIFI")
+multi8_out=$("$BENCH_FASTQ" -k 31 -w 993 -twopass-nostrand "$HIFI")
 echo "$multi8_out" >&2
 multi8_gbps=$(echo "$multi8_out" | awk '/^Throughput:/ {print $2}')
 echo -e "hifi\tmulti-8\t$multi8_gbps"
@@ -115,11 +124,12 @@ fi
 echo "Building bench_syncmer_fastq..." >&2
 (cd "$SIMD_MIN" && RUSTFLAGS="-C target-cpu=native" cargo build --release --example bench_syncmer_fastq 2>&1) >&2
 
-simd_fastq_out=$("$SIMD_MIN/target/release/examples/bench_syncmer_fastq" -k 31 -w 1022 "$HIFI")
+simd_fastq_out=$("$SIMD_MIN/target/release/examples/bench_syncmer_fastq" -k 31 -w 993 "$HIFI")
 echo "$simd_fastq_out" >&2
 
 # Parse "Throughput: X.XX GB/s"
 simd_fastq_gbps=$(echo "$simd_fastq_out" | awk '/^Throughput:/ {print $2}')
 echo -e "hifi\tsimd-minimizers\t$simd_fastq_gbps"
+fi
 
 echo "=== Done ===" >&2

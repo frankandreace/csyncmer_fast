@@ -1891,7 +1891,14 @@ static inline size_t csyncmer_twostack_simd_32_canonical_positions(
 // convention that a syncmer may never span an ambiguous base.
 //
 // Cost is one linear scan for the segment boundaries; the hot loops stay
-// branch-free, so ACGT-only input pays essentially nothing beyond that scan.
+// branch-free. The scan is byte-at-a-time and runs at roughly 3 GB/s, which is
+// not free relative to the kernels themselves (~+70% on count, ~+25% on
+// positions) -- call the core routines directly if the input is known to be
+// unambiguous.
+//
+// On a buffer too small to hold every position, the positions wrappers return 0
+// and print to stderr, exactly like the core routines -- never a truncated
+// partial count.
 
 static inline int csyncmer_is_acgt(char c) {
     switch (c) {
@@ -1923,21 +1930,30 @@ static inline int csyncmer_is_acgt_only(const char* sequence, size_t length) {
     return 1;
 }
 
-#define CSYNCMER_DEFINE_SEGMENTED_POSITIONS(WRAPPER, CORE)                     \
+// Like the core routines, these return 0 (and print to stderr) if the output
+// buffer is too small -- never a truncated partial count.
+#define CSYNCMER_DEFINE_SEGMENTED_POSITIONS(WRAPPER, CORE, COUNT_CORE)          \
 static inline size_t WRAPPER(                                                  \
     const char* sequence, size_t length, size_t K, size_t S,                   \
     uint32_t* out_positions, size_t max_positions                              \
 ) {                                                                            \
+    if (!out_positions) return 0;                                              \
     size_t cursor = 0, beg = 0, end = 0, total = 0;                            \
     while (csyncmer_next_acgt_segment(sequence, length, &cursor, &beg, &end)) { \
         size_t seg_len = end - beg;                                            \
         if (seg_len < K) continue;                                             \
-        size_t room = (total < max_positions) ? (max_positions - total) : 0;    \
-        if (out_positions && room == 0) break;                                 \
+        size_t room = max_positions - total;                                   \
         size_t n = CORE(sequence + beg, seg_len, K, S,                          \
-                        out_positions ? out_positions + total : NULL, room);    \
-        if (out_positions)                                                     \
-            for (size_t i = 0; i < n; i++) out_positions[total + i] += (uint32_t)beg; \
+                        out_positions + total, room);                          \
+        if (n == 0 && room < seg_len - K + 1) {                                \
+            /* CORE returns 0 both for "no syncmers here" and for "output       \
+               buffer too small"; the two are ambiguous only when room is below \
+               the segment's theoretical maximum. Disambiguate, so an overflow  \
+               is never reported as a valid partial total. */                  \
+            if (COUNT_CORE(sequence + beg, seg_len, K, S) > 0) return 0;        \
+        }                                                                      \
+        for (size_t i = 0; i < n; i++)                                         \
+            out_positions[total + i] += (uint32_t)beg;                         \
         total += n;                                                            \
     }                                                                          \
     return total;                                                              \
@@ -1961,25 +1977,31 @@ CSYNCMER_DEFINE_SEGMENTED_COUNT(csyncmer_segmented_count,
 CSYNCMER_DEFINE_SEGMENTED_COUNT(csyncmer_segmented_canonical_count,
                                 csyncmer_twostack_simd_32_canonical_count)
 CSYNCMER_DEFINE_SEGMENTED_POSITIONS(csyncmer_segmented_positions,
-                                    csyncmer_twostack_simd_32_positions)
+                                    csyncmer_twostack_simd_32_positions,
+                                    csyncmer_twostack_simd_32_count)
 
 // Canonical positions also emit a strand byte per syncmer.
 static inline size_t csyncmer_segmented_canonical_positions(
     const char* sequence, size_t length, size_t K, size_t S,
     uint32_t* out_positions, uint8_t* out_strands, size_t max_positions
 ) {
+    if (!out_positions) return 0;
     size_t cursor = 0, beg = 0, end = 0, total = 0;
     while (csyncmer_next_acgt_segment(sequence, length, &cursor, &beg, &end)) {
         size_t seg_len = end - beg;
         if (seg_len < K) continue;
-        size_t room = (total < max_positions) ? (max_positions - total) : 0;
-        if (out_positions && room == 0) break;
+        size_t room = max_positions - total;
         size_t n = csyncmer_twostack_simd_32_canonical_positions(
-            sequence + beg, seg_len, K, S,
-            out_positions ? out_positions + total : NULL,
+            sequence + beg, seg_len, K, S, out_positions + total,
             out_strands ? out_strands + total : NULL, room);
-        if (out_positions)
-            for (size_t i = 0; i < n; i++) out_positions[total + i] += (uint32_t)beg;
+        if (n == 0 && room < seg_len - K + 1) {
+            /* See CSYNCMER_DEFINE_SEGMENTED_POSITIONS: distinguish an empty
+               segment from an output-buffer overflow. */
+            if (csyncmer_twostack_simd_32_canonical_count(
+                    sequence + beg, seg_len, K, S) > 0) return 0;
+        }
+        for (size_t i = 0; i < n; i++)
+            out_positions[total + i] += (uint32_t)beg;
         total += n;
     }
     return total;

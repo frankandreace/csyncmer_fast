@@ -9,6 +9,7 @@ HIFI=~/data/SRR34765324.20G.fastq
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BENCH="$SCRIPT_DIR/benchmark_digest"
 RUNS=3
+SECTION="${SECTION:-all}"
 
 # ── Build ──
 if [ ! -f "$BENCH" ] || [ "$SCRIPT_DIR/benchmark_digest.cpp" -nt "$BENCH" ]; then
@@ -18,13 +19,17 @@ if [ ! -f "$BENCH" ] || [ "$SCRIPT_DIR/benchmark_digest.cpp" -nt "$BENCH" ]; the
 fi
 
 # ── CHM13: K=31, S=15 → k_small=15, large_window=17 ──
-echo "=== digest CHM13 (K=31 S=15) ===" >&2
-chm13_gbps=$("$BENCH" "$CHM13" 15 17 "$RUNS")
-echo -e "chm13\tdigest\t$chm13_gbps"
+if [ "$SECTION" = all ] || [ "$SECTION" = chm13 ]; then
+    echo "=== digest CHM13 (K=31 S=15) ===" >&2
+    chm13_gbps=$("$BENCH" "$CHM13" 15 17 "$RUNS")
+    echo -e "chm13\tdigest\t$chm13_gbps"
+fi
 
-# ── HiFi: K=1052, S=31 → k_small=31, large_window=1022 ──
-echo "=== digest HiFi (K=1052 S=31) ===" >&2
-hifi_gbps=$("$BENCH" "$HIFI" 31 1022 "$RUNS")
-echo -e "hifi\tdigest\t$hifi_gbps"
+# ── HiFi: K=1023, S=31 → k_small=31, large_window=993 ──
+if [ "$SECTION" = all ] || [ "$SECTION" = hifi ]; then
+    echo "=== digest HiFi (K=1023 S=31) ===" >&2
+    hifi_gbps=$("$BENCH" "$HIFI" 31 993 "$RUNS")
+    echo -e "hifi\tdigest\t$hifi_gbps"
+fi
 
 echo "=== digest done ===" >&2

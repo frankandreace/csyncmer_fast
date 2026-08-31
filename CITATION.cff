@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "csyncmer_fast: an efficient single-threaded C implementation of closed syncmer extraction"
+abstract: >-
+  A header-only C library for fast extraction of closed syncmers, using AVX2 SIMD
+  with a two-stack sliding-window minimum and a rolling ntHash. Provides
+  canonical and non-canonical variants, count-only and position-collecting
+  entry points, a scalar fallback, and an exact 64-bit streaming iterator.
+type: software
+license: MIT
+repository-code: "https://github.com/frankandreace/csyncmer_fast"
+version: 1.0.0
+date-released: 2026-08-31
+keywords:
+  - syncmers
+  - closed syncmers
+  - minimizers
+  - k-mers
+  - SIMD
+  - AVX2
+  - bioinformatics
+  - sequence analysis
+authors:
+  - family-names: Andreace
+    given-names: Francesco
+    orcid: "https://orcid.org/0009-0008-0566-200X"
+  - family-names: Falce
+    given-names: Matthieu
+  - family-names: Sadakane
+    given-names: Kunihiko
+    orcid: "https://orcid.org/0000-0002-8212-3682"
+  - family-names: Chikhi
+    given-names: Rayan
+    orcid: "https://orcid.org/0000-0003-1099-8735"

@@ -141,11 +141,11 @@ def plot(data, syng_data, outbase):
             x = i * bar_width - (n_syng - 1) * bar_width / 2
             ax_syng.bar(x, v, width=bar_width * 0.95, color=color, alpha=alpha,
                         edgecolor="black", linewidth=0.3, label=m_label)
-            ax_syng.text(x, v + max_t * 0.01, f"{v:.1f}s", ha="center",
+            ax_syng.text(x, v + max_t * 0.01, f"{v:.0f}s" if v >= 100 else f"{v:.1f}s", ha="center",
                          va="bottom", fontsize=FS - 2)
 
         ax_syng.set_xticks([])
-        ax_syng.set_xlabel("(c) syng\nHiFi, 8 threads", fontsize=FS - 0.5, labelpad=2)
+        ax_syng.set_xlabel("(c) syng, 8 threads\nk=1023, s=31", fontsize=FS - 0.5, labelpad=2)
         ax_syng.spines["top"].set_visible(False)
         ax_syng.spines["left"].set_visible(False)
         ax_syng.yaxis.tick_right()

@@ -76,7 +76,29 @@ Parameters must satisfy `2 <= s < k` and `length >= k`; every entry point return
 for the iterator constructors) otherwise. `s == 1` is rejected because a 1-base s-mer
 degenerates the rolling-hash delay ring.
 
-All SIMD implementations use 16-bit hash approximation (~99.99996% accurate, ~4 errors per 10M syncmers).
+**Input alphabet — important.** The routines above assume the sequence contains **only**
+`A/C/G/T` (either case). Any other byte, notably `N`, is mapped to `A`, so a run of `N`s is
+silently hashed as poly-A and produces spurious syncmers. Reference assemblies routinely
+contain megabases of `N`, so use the segment-aware wrappers unless you have already
+guaranteed the input is unambiguous:
+
+| Function | Output |
+|----------|--------|
+| `csyncmer_segmented_count` / `csyncmer_segmented_canonical_count` | Count |
+| `csyncmer_segmented_positions` | Positions |
+| `csyncmer_segmented_canonical_positions` | Positions + strands |
+
+These split the input at runs of non-`ACGT`, run the corresponding batch routine on each
+unambiguous segment, and return positions in coordinates of the **original** sequence, so no
+syncmer ever spans an ambiguous base. Segments shorter than `k` yield nothing. For
+`ACGT`-only input they return exactly what the non-segmented routines return, at the cost of
+one linear scan; the hot loops stay branch-free. `csyncmer_is_acgt_only(seq, len)` tests the
+precondition directly.
+
+All SIMD implementations use 16-bit hash approximation. The resulting discrepancy vs exact
+hashes is parameter-dependent: ~4 errors per 10M syncmers at k=31/s=15 (window 17), but it
+grows as the window `k-s+1` narrows, since ties in the truncated hash become more likely
+(~3.6 per 10k at k=20/s=16, window 5). Use the 64-bit streaming iterator where exactness matters.
 Speeds measured on chr19 (59 MB), best-of-5, Intel Core Ultra 5 135H (4.6 GHz).
 
 The batch API (`csyncmer_twostack_simd_32_*`) requires AVX2 (`-march=native` or `-mavx2`). On platforms without AVX2, use the scalar `csyncmer_rescan_32_*` functions or the streaming iterator. The streaming iterator provides exact 64-bit hashes and processes one syncmer at a time.

@@ -1874,6 +1874,117 @@ static inline size_t csyncmer_twostack_simd_32_canonical_positions(
 
 #endif  // !__AVX2__
 
+// ============================================================================
+// Ambiguity (N) handling
+// ============================================================================
+// IMPORTANT: the core routines above assume the input contains ONLY A/C/G/T
+// (either case). Any other byte -- notably 'N' -- is mapped to 'A' by
+// csyncmer_pack_base()/csyncmer_init_ascii_to_idx(), so a run of Ns is silently
+// hashed as poly-A and yields spurious syncmers. Reference assemblies routinely
+// contain megabases of N, so callers must not pass such sequence to the core
+// routines directly.
+//
+// The wrappers below do the segmentation for you: they split the input at runs
+// of non-ACGT characters, run the requested core routine on each ACGT-only
+// segment, and translate the returned offsets back into coordinates of the
+// original sequence. Segments shorter than K produce no syncmers, matching the
+// convention that a syncmer may never span an ambiguous base.
+//
+// Cost is one linear scan for the segment boundaries; the hot loops stay
+// branch-free, so ACGT-only input pays essentially nothing beyond that scan.
+
+static inline int csyncmer_is_acgt(char c) {
+    switch (c) {
+        case 'A': case 'a': case 'C': case 'c':
+        case 'G': case 'g': case 'T': case 't': return 1;
+        default: return 0;
+    }
+}
+
+// Returns 1 and sets [*beg,*end) to the next maximal ACGT-only run at or after
+// *cursor, advancing *cursor past it; returns 0 when the sequence is exhausted.
+static inline int csyncmer_next_acgt_segment(
+    const char* sequence, size_t length, size_t* cursor,
+    size_t* beg, size_t* end
+) {
+    size_t i = *cursor;
+    while (i < length && !csyncmer_is_acgt(sequence[i])) i++;
+    if (i >= length) { *cursor = length; return 0; }
+    size_t j = i;
+    while (j < length && csyncmer_is_acgt(sequence[j])) j++;
+    *beg = i; *end = j; *cursor = j;
+    return 1;
+}
+
+// True if the sequence is entirely A/C/G/T, i.e. safe for the core routines.
+static inline int csyncmer_is_acgt_only(const char* sequence, size_t length) {
+    for (size_t i = 0; i < length; i++)
+        if (!csyncmer_is_acgt(sequence[i])) return 0;
+    return 1;
+}
+
+#define CSYNCMER_DEFINE_SEGMENTED_POSITIONS(WRAPPER, CORE)                     \
+static inline size_t WRAPPER(                                                  \
+    const char* sequence, size_t length, size_t K, size_t S,                   \
+    uint32_t* out_positions, size_t max_positions                              \
+) {                                                                            \
+    size_t cursor = 0, beg = 0, end = 0, total = 0;                            \
+    while (csyncmer_next_acgt_segment(sequence, length, &cursor, &beg, &end)) { \
+        size_t seg_len = end - beg;                                            \
+        if (seg_len < K) continue;                                             \
+        size_t room = (total < max_positions) ? (max_positions - total) : 0;    \
+        if (out_positions && room == 0) break;                                 \
+        size_t n = CORE(sequence + beg, seg_len, K, S,                          \
+                        out_positions ? out_positions + total : NULL, room);    \
+        if (out_positions)                                                     \
+            for (size_t i = 0; i < n; i++) out_positions[total + i] += (uint32_t)beg; \
+        total += n;                                                            \
+    }                                                                          \
+    return total;                                                              \
+}
+
+#define CSYNCMER_DEFINE_SEGMENTED_COUNT(WRAPPER, CORE)                         \
+static inline size_t WRAPPER(                                                  \
+    const char* sequence, size_t length, size_t K, size_t S                    \
+) {                                                                            \
+    size_t cursor = 0, beg = 0, end = 0, total = 0;                            \
+    while (csyncmer_next_acgt_segment(sequence, length, &cursor, &beg, &end)) { \
+        size_t seg_len = end - beg;                                            \
+        if (seg_len < K) continue;                                             \
+        total += CORE(sequence + beg, seg_len, K, S);                          \
+    }                                                                          \
+    return total;                                                              \
+}
+
+CSYNCMER_DEFINE_SEGMENTED_COUNT(csyncmer_segmented_count,
+                                csyncmer_twostack_simd_32_count)
+CSYNCMER_DEFINE_SEGMENTED_COUNT(csyncmer_segmented_canonical_count,
+                                csyncmer_twostack_simd_32_canonical_count)
+CSYNCMER_DEFINE_SEGMENTED_POSITIONS(csyncmer_segmented_positions,
+                                    csyncmer_twostack_simd_32_positions)
+
+// Canonical positions also emit a strand byte per syncmer.
+static inline size_t csyncmer_segmented_canonical_positions(
+    const char* sequence, size_t length, size_t K, size_t S,
+    uint32_t* out_positions, uint8_t* out_strands, size_t max_positions
+) {
+    size_t cursor = 0, beg = 0, end = 0, total = 0;
+    while (csyncmer_next_acgt_segment(sequence, length, &cursor, &beg, &end)) {
+        size_t seg_len = end - beg;
+        if (seg_len < K) continue;
+        size_t room = (total < max_positions) ? (max_positions - total) : 0;
+        if (out_positions && room == 0) break;
+        size_t n = csyncmer_twostack_simd_32_canonical_positions(
+            sequence + beg, seg_len, K, S,
+            out_positions ? out_positions + total : NULL,
+            out_strands ? out_strands + total : NULL, room);
+        if (out_positions)
+            for (size_t i = 0; i < n; i++) out_positions[total + i] += (uint32_t)beg;
+        total += n;
+    }
+    return total;
+}
+
 #ifdef __cplusplus
 }
 #endif

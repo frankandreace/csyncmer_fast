@@ -31,8 +31,9 @@ DATASETS = [
     ("hifi",  "(b) SRR34765324 (20GB)", "k=1023, s=31"),
 ]
 
-# syng panel: map config names in syng.tsv → METHODS keys
-SYNG_MAP = {"seqhash": "seqhash", "csyncmer": "twostack", "multi8": "multi-8"}
+# syng panel: map config names in syng.tsv → METHODS keys. syng's CSYNCMER build runs
+# reads < 32 kb through the 8-lane multi-read path, so it is drawn as multi-8.
+SYNG_MAP = {"seqhash": "seqhash", "csyncmer": "multi-8", "multi8": "multi-8"}
 SYNG_ORDER = ["seqhash", "csyncmer", "multi8"]  # bar order left→right
 
 
@@ -51,25 +52,29 @@ def read_data(path):
 
 
 def read_syng(path):
-    """Read syng.tsv → {config: median_s}."""
+    """Read syng.tsv → ({config: bar time (s)}, is_cpu). Bars are CPU time (cpu_s)
+    when present, else the older wall-clock median_s."""
     data = {}
     with open(path) as f:
-        header = f.readline()
+        cols = f.readline().rstrip("\n").split("\t")
+        is_cpu = "cpu_s" in cols
+        i = cols.index("cpu_s") if is_cpu else 1
         for line in f:
             line = line.strip()
             if not line:
                 continue
             parts = line.split("\t")
-            data[parts[0]] = float(parts[1])
-    return data
+            data[parts[0]] = float(parts[i])
+    return data, is_cpu
 
 
 def read_syng_syncmer(path):
-    """Read syng_syncmer.tsv → {config: syncmer extraction wall time (s)}."""
+    """Read syng_syncmer.tsv → {config: syncmer extraction time (s)}: extract_cpu_s,
+    measured inside syng with perf, else the older standalone syncmer_s."""
     data = {}
     with open(path) as f:
         cols = f.readline().rstrip("\n").split("\t")
-        i = cols.index("syncmer_s")
+        i = cols.index("extract_cpu_s" if "extract_cpu_s" in cols else "syncmer_s")
         for line in f:
             line = line.strip()
             if not line:
@@ -79,7 +84,7 @@ def read_syng_syncmer(path):
     return data
 
 
-def plot(data, syng_data, syng_syncmer, outbase):
+def plot(data, syng_data, syng_syncmer, outbase, syng_is_cpu=False):
     FS = 10.5  # base font size — tune this single value to scale all text
     plt.rcParams.update({
         "font.size": FS,
@@ -144,10 +149,11 @@ def plot(data, syng_data, syng_syncmer, outbase):
         ax_syng = axes[1]
         # Build lookup from method key → (color, alpha, label)
         method_style = {m[0]: (c, a, m[1]) for m, c, a in zip(METHODS, COLORS, ALPHAS)}
-        n_syng = len(SYNG_ORDER)
-        max_t = max(syng_data.get(c, 0) for c in SYNG_ORDER) * 1.18
+        syng_cfgs = [c for c in SYNG_ORDER if c in syng_data]
+        n_syng = len(syng_cfgs)
+        max_t = max(syng_data[c] for c in syng_cfgs) * 1.18
 
-        for i, cfg in enumerate(SYNG_ORDER):
+        for i, cfg in enumerate(syng_cfgs):
             m_key = SYNG_MAP[cfg]
             color, alpha, m_label = method_style[m_key]
             v = syng_data.get(cfg)
@@ -180,11 +186,13 @@ def plot(data, syng_data, syng_syncmer, outbase):
         ax_syng.spines["left"].set_visible(False)
         ax_syng.yaxis.tick_right()
         ax_syng.yaxis.set_label_position("right")
-        ax_syng.set_ylabel("Time (s)", fontsize=FS, labelpad=6)
+        ax_syng.set_ylabel("CPU time (s)" if syng_is_cpu else "Time (s)", fontsize=FS, labelpad=6)
         ax_syng.spines["right"].set_position(("outward", 6))
         ax_syng.tick_params(axis="y", length=2, pad=3)
         ax_syng.set_ylim(0, max_t)
-        if any(c in syng_syncmer for c in SYNG_ORDER):
+        if n_syng <= 2: # keep bars as narrow as with three, leaving room for the split legend
+            ax_syng.set_xlim(-bar_width * 1.15, bar_width * 2.2)
+        if any(c in syng_syncmer for c in syng_cfgs):
             from matplotlib.patches import Patch
             split_handles = [
                 Patch(facecolor="#888888", edgecolor="black", linewidth=0.3,
@@ -192,9 +200,9 @@ def plot(data, syng_data, syng_syncmer, outbase):
                 Patch(facecolor="white", hatch="////", edgecolor="#888888",
                       linewidth=0.3, label="rest"),
             ]
-            # sits above the two csyncmer bars, below the seqhash bar's label
+            # sits above the csyncmer bar(s), right of the seqhash bar
             ax_syng.legend(handles=split_handles, loc="upper right",
-                           bbox_to_anchor=(1.0, 0.84), frameon=False,
+                           bbox_to_anchor=(1.02, 0.84 if n_syng > 2 else 0.66), frameon=False,
                            fontsize=FS - 2.5, handlelength=1.0, handletextpad=0.3,
                            borderaxespad=0.1)
 
@@ -234,9 +242,9 @@ def main():
     args = parser.parse_args()
 
     data = read_data(args.data)
-    syng_data = read_syng(args.syng) if args.syng else {}
+    syng_data, syng_is_cpu = read_syng(args.syng) if args.syng else ({}, False)
     syng_syncmer = read_syng_syncmer(args.syng_syncmer) if args.syng_syncmer else {}
-    plot(data, syng_data, syng_syncmer, args.output)
+    plot(data, syng_data, syng_syncmer, args.output, syng_is_cpu)
 
 
 if __name__ == "__main__":

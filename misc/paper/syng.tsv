@@ -1,4 +1,3 @@
-config	median_s	min_s	max_s	vs_seqhash	syncmers	threads	pinned
-multi8	581.83	581.83	581.83	-51%	315006298	8	0-7
-csyncmer	597.05	597.05	597.05	-49%	315006298	8	0-7
-seqhash	1177.57	1177.57	1177.57	baseline	328409682	8	0-7
+config	wall_s	cpu_s	user_s	sys_s	vs_seqhash_wall	vs_seqhash_cpu	instances	syncmers	threads	pinned	syng_commit
+seqhash	886.80	3715.49	3510.85	204.64	baseline	baseline	633285571	328409682	8	0-7	698d409
+csyncmer	462.00	1263.85	1110.82	153.03	-48%	-66%	607065014	315006298	8	0-7	698d409

@@ -165,23 +165,24 @@ def plot(data, syng_data, syng_syncmer, outbase, syng_is_cpu=False):
                 ax_syng.bar(x, v, width=bar_width * 0.95, color=color, alpha=alpha,
                             edgecolor="black", linewidth=0.3, label=m_label)
             else:
-                # Stacked: syncmer extraction (solid) under the rest of syng (hatched,
-                # in the method colour), then one black outline around the whole bar
+                # Stacked: the rest of syng (hatched, in the method colour) under
+                # syncmer extraction (solid), then one black outline around the whole bar
                 t_sync = min(t_sync, v)
-                ax_syng.bar(x, t_sync, width=bar_width * 0.95, color=color, alpha=alpha,
-                            linewidth=0, label=m_label)
-                ax_syng.bar(x, v - t_sync, bottom=t_sync, width=bar_width * 0.95,
+                t_rest = v - t_sync
+                ax_syng.bar(x, t_rest, width=bar_width * 0.95,
                             facecolor="white", edgecolor=color, alpha=max(alpha, 0.6),
                             hatch="////", linewidth=0)
+                ax_syng.bar(x, t_sync, bottom=t_rest, width=bar_width * 0.95, color=color,
+                            alpha=alpha, linewidth=0, label=m_label)
                 ax_syng.bar(x, v, width=bar_width * 0.95, fill=False,
                             edgecolor="black", linewidth=0.3)
-                ax_syng.plot([x - bar_width * 0.475, x + bar_width * 0.475], [t_sync] * 2,
+                ax_syng.plot([x - bar_width * 0.475, x + bar_width * 0.475], [t_rest] * 2,
                              color="black", linewidth=0.3)
             ax_syng.text(x, v + max_t * 0.01, f"{v:.0f}s" if v >= 100 else f"{v:.1f}s", ha="center",
                          va="bottom", fontsize=FS - 2)
 
         ax_syng.set_xticks([])
-        ax_syng.set_xlabel("(c) syng, 8 threads\n10 HPRC (636GB)\nk=1023, s=31", fontsize=FS - 1.5, labelpad=2)
+        ax_syng.set_xlabel("(c) syng, 10 HPRC\n(636GB), k=1023, s=31", fontsize=FS - 1.5, labelpad=2)
         ax_syng.spines["top"].set_visible(False)
         ax_syng.spines["left"].set_visible(False)
         ax_syng.yaxis.tick_right()

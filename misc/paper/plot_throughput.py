@@ -64,7 +64,22 @@ def read_syng(path):
     return data
 
 
-def plot(data, syng_data, outbase):
+def read_syng_syncmer(path):
+    """Read syng_syncmer.tsv → {config: syncmer extraction wall time (s)}."""
+    data = {}
+    with open(path) as f:
+        cols = f.readline().rstrip("\n").split("\t")
+        i = cols.index("syncmer_s")
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            data[parts[0]] = float(parts[i])
+    return data
+
+
+def plot(data, syng_data, syng_syncmer, outbase):
     FS = 10.5  # base font size — tune this single value to scale all text
     plt.rcParams.update({
         "font.size": FS,
@@ -139,8 +154,23 @@ def plot(data, syng_data, outbase):
             if v is None:
                 continue
             x = i * bar_width - (n_syng - 1) * bar_width / 2
-            ax_syng.bar(x, v, width=bar_width * 0.95, color=color, alpha=alpha,
-                        edgecolor="black", linewidth=0.3, label=m_label)
+            t_sync = syng_syncmer.get(cfg)
+            if t_sync is None:
+                ax_syng.bar(x, v, width=bar_width * 0.95, color=color, alpha=alpha,
+                            edgecolor="black", linewidth=0.3, label=m_label)
+            else:
+                # Stacked: syncmer extraction (solid) under the rest of syng (hatched,
+                # in the method colour), then one black outline around the whole bar
+                t_sync = min(t_sync, v)
+                ax_syng.bar(x, t_sync, width=bar_width * 0.95, color=color, alpha=alpha,
+                            linewidth=0, label=m_label)
+                ax_syng.bar(x, v - t_sync, bottom=t_sync, width=bar_width * 0.95,
+                            facecolor="white", edgecolor=color, alpha=max(alpha, 0.6),
+                            hatch="////", linewidth=0)
+                ax_syng.bar(x, v, width=bar_width * 0.95, fill=False,
+                            edgecolor="black", linewidth=0.3)
+                ax_syng.plot([x - bar_width * 0.475, x + bar_width * 0.475], [t_sync] * 2,
+                             color="black", linewidth=0.3)
             ax_syng.text(x, v + max_t * 0.01, f"{v:.0f}s" if v >= 100 else f"{v:.1f}s", ha="center",
                          va="bottom", fontsize=FS - 2)
 
@@ -154,6 +184,19 @@ def plot(data, syng_data, outbase):
         ax_syng.spines["right"].set_position(("outward", 6))
         ax_syng.tick_params(axis="y", length=2, pad=3)
         ax_syng.set_ylim(0, max_t)
+        if any(c in syng_syncmer for c in SYNG_ORDER):
+            from matplotlib.patches import Patch
+            split_handles = [
+                Patch(facecolor="#888888", edgecolor="black", linewidth=0.3,
+                      label="syncmers"),
+                Patch(facecolor="white", hatch="////", edgecolor="#888888",
+                      linewidth=0.3, label="rest"),
+            ]
+            # sits above the two csyncmer bars, below the seqhash bar's label
+            ax_syng.legend(handles=split_handles, loc="upper right",
+                           bbox_to_anchor=(1.0, 0.84), frameon=False,
+                           fontsize=FS - 2.5, handlelength=1.0, handletextpad=0.3,
+                           borderaxespad=0.1)
 
     # Single legend above all panels — merge handles, ordered by METHODS
     seen = {}
@@ -183,13 +226,17 @@ def main():
     parser.add_argument("data", help="Path to data.tsv")
     parser.add_argument("-s", "--syng", default=None,
                         help="Path to syng.tsv (adds panel c)")
+    parser.add_argument("--syng-syncmer", default=None,
+                        help="Path to syng_syncmer.tsv (splits panel c bars into "
+                             "syncmer extraction + rest of syng)")
     parser.add_argument("-o", "--output", default="fig_throughput.pdf",
                         help="Output file (default: fig_throughput.pdf)")
     args = parser.parse_args()
 
     data = read_data(args.data)
     syng_data = read_syng(args.syng) if args.syng else {}
-    plot(data, syng_data, args.output)
+    syng_syncmer = read_syng_syncmer(args.syng_syncmer) if args.syng_syncmer else {}
+    plot(data, syng_data, syng_syncmer, args.output)
 
 
 if __name__ == "__main__":

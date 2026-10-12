@@ -11,10 +11,22 @@
 #     csyncmer  597.05s   315006298 syncmers
 #     seqhash  1177.57s   328409682 syncmers
 #
+# It also writes syng_syncmer.tsv: the time syng spends extracting syncmers, for the
+# stacked bars of panel (c).  Inside syng, syncmer extraction is interleaved with the
+# hash-table lookups in the worker threads, so it is measured standalone instead:
+# bench_syncmer_fastq runs the same code syng calls (seqhash / csyncmer twostack /
+# multi-8) single-threaded over the same input files, and the summed time is divided
+# by THREADS (syncmer extraction is per-read independent, so it parallelises cleanly).
+#
 # Usage: ./syng_benchmark.sh [RUNS] [THREADS]
+#   SKIP_SYNG=1 ./syng_benchmark.sh    only (re)measure syng_syncmer.tsv
+#   INPUT_FILES="a.fq b.fq" ...        use these inputs instead of the HPRC set
 set -euo pipefail
 
-SYNG_DIR=~/tools/syng
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SYNG_DIR=${SYNG_DIR:-~/tools/syng}
+BENCH_FASTQ_DIR="$SCRIPT_DIR/../fastq"
+SKIP_SYNG=${SKIP_SYNG:-0}
 DATA_DIR=${DATA_DIR:-~/data/hprc}
 OUT_DIR=${OUT_DIR:-/tmp/syng_hifi_bench}
 RUNS=${1:-1}
@@ -50,10 +62,13 @@ SAMPLES=(
 )
 
 INPUTS=()
-for s in "${SAMPLES[@]}"; do
-    f="$DATA_DIR/$s"
+if [ -n "${INPUT_FILES:-}" ]; then
+    read -r -a INPUTS <<< "$INPUT_FILES"
+else
+    for s in "${SAMPLES[@]}"; do INPUTS+=("$DATA_DIR/$s"); done
+fi
+for f in "${INPUTS[@]}"; do
     [ -f "$f" ] || { echo "missing input: $f" >&2; exit 1; }
-    INPUTS+=("$f")
 done
 
 # Pin to CPUs 0..THREADS-1 for reproducibility
@@ -72,6 +87,36 @@ echo "Input:  ${#INPUTS[@]} files, $((total_bytes / 1000000000)) GB"
 echo "Params: -w $W -k $SMER (syncmer length $SYNCMER_LEN) -T $THREADS (pinned to CPUs $CPUS)"
 echo "Runs:   $RUNS"
 echo ""
+
+# ── Syncmer extraction time alone (→ syng_syncmer.tsv, the lower part of panel (c) bars) ──
+echo "Building bench_syncmer_fastq..."
+make -C "$BENCH_FASTQ_DIR" bench_syncmer_fastq >/dev/null
+BENCH_FASTQ="$BENCH_FASTQ_DIR/bench_syncmer_fastq"
+BENCH_W=$((W + 1)) # see the -w note above
+declare -A BENCH_MODE=([multi8]="" [csyncmer]="-single" [seqhash]="-seqhash")
+SYNCMER_TSV="$SCRIPT_DIR/syng_syncmer.tsv"
+{
+    printf "config\tsyncmer_cpu_s\tthreads\tsyncmer_s\tsyncmers\n"
+    for cfg in multi8 csyncmer seqhash; do
+        echo "--- syncmer extraction only: $cfg (1 thread, CPU 0) ---" >&2
+        cpu_s=0; count=0
+        for f in "${INPUTS[@]}"; do
+            out=$(taskset -c 0 "$BENCH_FASTQ" -k "$SMER" -w "$BENCH_W" ${BENCH_MODE[$cfg]} "$f" 2>/dev/null)
+            t=$(awk '/^Time:/ {print $2}' <<< "$out")
+            n=$(awk '/^Syncmers:/ {print $2}' <<< "$out")
+            echo "  $(basename "$f"): ${t}s  ($n syncmers)" >&2
+            cpu_s=$(awk "BEGIN {print $cpu_s + $t}")
+            count=$((count + n))
+        done
+        wall_s=$(awk "BEGIN {printf \"%.2f\", $cpu_s / $THREADS}")
+        echo "  total ${cpu_s}s on 1 thread => ${wall_s}s at $THREADS threads" >&2
+        printf "%s\t%.2f\t%s\t%s\t%s\n" "$cfg" "$cpu_s" "$THREADS" "$wall_s" "$count"
+    done
+} > "$SYNCMER_TSV.tmp" && mv "$SYNCMER_TSV.tmp" "$SYNCMER_TSV"
+echo "Wrote $SYNCMER_TSV"
+echo ""
+
+if [ "$SKIP_SYNG" = 1 ]; then rm -rf "$OUT_DIR"; echo "Done (SKIP_SYNG=1)."; exit 0; fi
 
 # Build all binaries
 echo "Building multi8 (AVX2=1 MULTI8=1)..."
@@ -135,7 +180,6 @@ run_bench "csyncmer (ntHash + twostack SIMD)" "$OUT_DIR/syng_csyncmer" "csyncmer
 run_bench "seqhash (original hash)"           "$OUT_DIR/syng_seqhash"  "seqhash"
 
 # ── Emit syng.tsv (the input to plot_throughput.py -s) ──
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TSV="$SCRIPT_DIR/syng.tsv"
 read -r base_median _ _ _ <<< "${RESULT[seqhash]}"
 {

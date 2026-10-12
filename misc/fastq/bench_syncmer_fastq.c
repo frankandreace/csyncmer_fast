@@ -127,27 +127,37 @@ int main(int argc, char **argv) {
     double elapsed;
 
     if (seqhash_mode) {
-        /* Durbin's seqhash syncmer iterator per read, with reinit (same as syng) */
+        /* Durbin's seqhash syncmer iterator per read, with reinit (same as syng).
+         * seqhash takes bases as 0-3 codes, which syng's seqIO produces while reading
+         * (dna2index4Conv), so convert each read outside the timed region. */
         int window_size = K - S + 1;
         fprintf(stderr, "Running syncmer detection (seqhash, w=%d)...\n", window_size);
-        double t0 = now();
+        uint8_t to_index[256] = {0};  /* A and non-ACGT -> 0, as dna2index4Conv */
+        to_index['C'] = to_index['c'] = 1;
+        to_index['G'] = to_index['g'] = 2;
+        to_index['T'] = to_index['t'] = 3;
+        char *idx_seq = malloc(max_len);
+        elapsed = 0;
 
         SeqhashD *sh = seqhashCreateD(S, window_size, 7);
         SeqhashIteratorD *si = NULL;
         for (size_t i = 0; i < nseqs; i++) {
             if (lens[i] < (size_t)K) continue;
+            for (size_t j = 0; j < lens[i]; j++)
+                idx_seq[j] = (char)to_index[(uint8_t)seqs[i][j]];
+            double t0 = now();
             U64 kmer;
             int pos;
             bool isF;
-            if (!si) si = syncmerIteratorD(sh, seqs[i], (int)lens[i]);
-            else syncmerIteratorReinitD(si, seqs[i], (int)lens[i]);
+            if (!si) si = syncmerIteratorD(sh, idx_seq, (int)lens[i]);
+            else syncmerIteratorReinitD(si, idx_seq, (int)lens[i]);
             while (syncmerNextD(si, &kmer, &pos, &isF))
                 total_syncmers++;
+            elapsed += now() - t0;
         }
         if (si) seqhashIteratorDestroyD(si);
         seqhashDestroyD(sh);
-
-        elapsed = now() - t0;
+        free(idx_seq);
     } else if (rescan_mode) {
         /* Canonical scalar rescan per read */
         uint32_t *pos_buf = malloc(max_per_read * sizeof(uint32_t));

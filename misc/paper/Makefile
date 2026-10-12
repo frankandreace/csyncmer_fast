@@ -6,7 +6,7 @@ parameter_sweep.tsv: run_parameter_sweep.sh
 data.tsv: run_benchmarks.sh
 	bash run_benchmarks.sh > $@.tmp && mv $@.tmp $@ || { rm -f $@.tmp; false; }
 
-# syng_syncmer.tsv (from syng_benchmark.sh) is optional: it splits panel (c) bars
+# syng_syncmer.tsv (perf profile of syng on the cluster) is optional: it splits panel (c) bars
 SYNG_SYNCMER = $(wildcard syng_syncmer.tsv)
 
 fig_throughput.pdf: plot_throughput.py data.tsv syng.tsv $(SYNG_SYNCMER)

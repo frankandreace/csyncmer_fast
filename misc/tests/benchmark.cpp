@@ -273,9 +273,12 @@ int run_full_benchmark(char *fasta_filename, int K, int S, char *output_file){
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
     printf("[[SYNCMERS syng original]]\n");
+    char *syng_encoded = (char*)malloc(sequence_input_length);
+    syng_encode_bases(sequence_input, sequence_input_length, syng_encoded);
     start_time = clock();
-    compute_closed_syncmers_syng_original(sequence_input, sequence_input_length, K, S, &num_syncmer_rescan);
+    compute_closed_syncmers_syng_original(syng_encoded, sequence_input_length, K, S, &num_syncmer_rescan);
     end_time = clock();
+    free(syng_encoded);
     print_benchmark(syng_original_name, start_time, end_time, fasta_filename, filePtr);
     if (filePtr != NULL) { fprintf(filePtr, "\t"); }
 
@@ -563,18 +566,26 @@ int run_quick_benchmark(char *fasta_filename, int K, int S, const char *filter){
         {
             double best = 1e9;
             size_t num = 0;
+            size_t max_chrom_len = 0;
+            for (size_t i = 0; i < chroms.size(); i++)
+                if (chrom_lens[i] > max_chrom_len) max_chrom_len = chrom_lens[i];
+            char *syng_encoded = (char*)malloc(max_chrom_len);
             for (int r = 0; r < QUICK_BENCH_RUNS; r++) {
                 size_t run_count = 0;
-                clock_t start = clock();
+                clock_t ticks = 0;  // syncmer extraction only, not the 0-3 encoding
                 for (size_t i = 0; i < chroms.size(); i++) {
                     size_t c = 0;
-                    compute_closed_syncmers_syng_original(chroms[i], chrom_lens[i], K, S, &c);
+                    syng_encode_bases(chroms[i], chrom_lens[i], syng_encoded);
+                    clock_t start = clock();
+                    compute_closed_syncmers_syng_original(syng_encoded, chrom_lens[i], K, S, &c);
+                    ticks += clock() - start;
                     run_count += c;
                 }
-                double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+                double elapsed = (double)ticks / CLOCKS_PER_SEC;
                 if (elapsed < best) best = elapsed;
                 num = run_count;
             }
+            free(syng_encoded);
             quick_print("SEQHASH_SYNG_ORIG", num, best, seq_mb);
         }
     }
